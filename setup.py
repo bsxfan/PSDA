@@ -19,7 +19,7 @@ setup(
         'scipy',
         'matplotlib',
     ],
-    license='',
+    license='MIT',
     author='Niko Brummer',
     author_email='niko.brummer@gmail.com',
     description='Python implementation of Probabilistic Spherical Discriminant Analysis.'
