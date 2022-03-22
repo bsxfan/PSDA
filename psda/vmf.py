@@ -316,9 +316,8 @@ class VMF:
         mean = self.mean()
         if labels is not None:
             mean = mean[labels,:]
-        X = np.random.randn(n,dim)/k + mean
-        norm = np.sqrt((X**2).sum(axis=-1,keepdims = True))
-        return X/norm
+        X = np.random.randn(n,dim)/np.sqrt(k) + mean
+        return decompose(X)[1]
         
         
     def logpdf(self, X):
@@ -339,6 +338,10 @@ class VMF:
     def kl(self, other):
         mean = self.mean()
         return self.logpdf(mean) - other.logpdf(mean)
+    
+    
+    def __repr__(self):
+        return f"VMF(dim={self.dim}, k={self.k})"
 
     
 if __name__ == "__main__":

@@ -32,18 +32,15 @@ class PSDA:
                             
                 or
                 
-        model = em(means,counts) # see the documention for em()   
+        model = PSDA.em(means,counts) # see the documention for em()   
         
-                model = PSDA.em(means,counts) works too
 
 
         """
-        
-        if not isinstance(between_distr, VMF):
-            between_distr = VMF(*between_distr)
         self.w = w = within_concentration
         self.between = between = between_distr
         self.b = b = between.k
+        self.dim = between.dim
         self.mu = between.mu
         self.bmu = between.kmu
         self.logC = logC = between.logC
@@ -120,6 +117,11 @@ class PSDA:
         """
         return self.prep(enroll).llr_matrix(self.prep(test))
     
+    def llr_vector(self, enroll:ndarray, test:ndarray) -> ndarray:
+        """
+        Convenience method. See PSDA.prep() for details.
+        """
+        return self.prep(enroll).llr_vector(self.prep(test))
     
     @classmethod
     def em(cls, means: ndarray, counts:ndarray, niters = 10, w0 = 1.0, quiet = False):
@@ -144,10 +146,12 @@ class PSDA:
         assert len(counts) == ns
         total = counts.sum()
         psda = cls.em_init(means,w0)
+        obj = []
         for i in range(niters):
             psda, llh = psda.em_iter(means,counts,total)
             if not quiet: print(f"em iter {i}: {llh}")
-        return psda
+            obj.append(llh)
+        return psda, obj
     
 
 
@@ -180,6 +184,10 @@ class PSDA:
         between = VMF.max_likelihood(means.mean(axis=0))
         return PSDA(w0, between)
     
+    
+    def __repr__(self):
+        return f"PSDA(dim={self.dim}, b={self.b}, w={self.w})"
+    
 def atleast2(means, counts):
     ok = counts > 1
     return means[ok,:], counts[ok]
@@ -211,54 +219,30 @@ class Side:
     def llr_matrix(self,rhs):
         """
         Scores the one or more (m) trial sides contained in self against
-        all (m) of the trial side(s) in rhs. Returns an (m,n) matrix of
+        all (n) of the trial side(s) in rhs. Returns an (m,n) matrix of
         LLR scores.
         """
         norm2 = self.pstats_norm2.reshape(-1,1) + rhs.wX_norm2 + \
                 2*self.pstats @ rhs.wX.T
         denom = self.logC(np.sqrt(norm2))
-        return self.num.reshape(-1,1) + rhs.num - denom - self.logCp 
+        return self.num.reshape(-1,1) + rhs.num - denom - self.logCb 
         
     
     
-    
+    def llr_vector(self, rhs):
+        """
+        Scores the n trial sides contained in self against the respective n
+        sides in the rhs. Returns an (n,) vector of LLR scores. If one of the 
+        sides has a single trial and the other multiple trials, broadcasting 
+        will be done in the usual way.
+        """
+        norm2 = self.pstats_norm2 + rhs.wX_norm2 + \
+                2*(self.pstats * rhs.wX).sum(axis=-1)
+        denom = self.logC(np.sqrt(norm2))
+        return self.num + rhs.num - denom - self.logCb
         
 
 
 
 
 
-if __name__ == "__main__":
-    
-    from numpy.random import randn, randint
-    
-    
-    dim = 10
-    b, w = 1, 10
-
-    ns = 10**3
-    n = 10**4
-         
-    
-    norm, mu = decompose(randn(dim)) 
-    model0 = PSDA(w, VMF(mu, b))
-    
-    Z = model0.sample_speakers(ns)
-    labels = randint(ns,size=(n,))
-    uu, labels, counts = np.unique(labels, return_inverse=True, return_counts=True)
-    
-    Xtrain = model0.sample(Z, labels)
-    L = np.full((n,len(counts)),False)   # (n, ns)
-    L[np.arange(n),labels] = True
-    means = (L.T @ Xtrain) / counts.reshape(-1,1)
-    
-    
-    means, counts = atleast2(means, counts)
-    
-    model = PSDA.em(means, counts, niters=20)
-    
-    
-
-
-
-    
