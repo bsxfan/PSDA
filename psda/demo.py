@@ -2,23 +2,23 @@ import numpy as np
 from numpy.random import randn, randint
 import matplotlib.pyplot as plt
 
-from psda.psda import VMF, PSDA, decompose, atleast2
+from psda import VMF, PSDA, decompose, atleast2
 from pyllr import quick_eval
 
 """
-This demo uses a quick-and-dirty data simulator, using Gaussians, not VMF. 
-It does not work for high dimensions. But you can play with dim = 2 or 3 
-if you like. 
+This demo uses a quick-and-dirty data simulator, using Gaussians, not VMF.
+It does not work for high dimensions. But you can play with dim = 2 or 3
+if you like.
 """
 dim = 20
-b, w = 10, 50  # within, between concentrations 
+b, w = 10, 50  # within, between concentrations
 
 ns = 100  # number of training speakers
 n = 1000  # numer of training examples
 
-     
+
 # set up model to sample from
-norm, mu = decompose(randn(dim)) 
+norm, mu = decompose(randn(dim))
 model0 = PSDA(w, VMF(mu, b))
 
 Z = model0.sample_speakers(ns)
@@ -60,12 +60,12 @@ plt.xlabel('iteration')
 plt.ylabel('marginal likelihood')
 plt.show()
 
-# generate some test data 
+# generate some test data
 nt = 10000
 Z1 = model0.sample_speakers(nt)
 Z2 = model0.sample_speakers(nt)
 Enroll = model0.sample(Z1, np.arange(nt))  # enrollment embeddings
-Test1 = model0.sample(Z1, np.arange(nt))   # target test embeddings 
+Test1 = model0.sample(Z1, np.arange(nt))   # target test embeddings
 Test2 = model0.sample(Z2, np.arange(nt))   # nnotar test embeddings
 
 # compute PSDA scores
@@ -150,5 +150,3 @@ print("\nPSDA scoring, mixed enroll:")
 print(f"  EER:     {eer_p12*100:.1f}%")
 print(f"  Cllr:    {cllr_p12:.3f}")
 print(f"  minCllr: {mincllr_p12:.3f}")
-
-
