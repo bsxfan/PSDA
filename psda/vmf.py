@@ -4,6 +4,8 @@ from scipy.special import ive, gammaln, logsumexp
 from scipy.optimize import toms748
 
 
+from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu
+
 def logfactorial(x):
     """
     Natural log of factorial. Invokes scipy.special.gammaln.
@@ -288,7 +290,7 @@ class VMF:
     
     
     
-    def sample(self, n_or_labels):
+    def sample_quick_and_dirty(self, n_or_labels):
         """
         Quick and dirty (statistically incorrect) samples, meant only for
         preliminary tyre-kicking.
@@ -318,6 +320,45 @@ class VMF:
             mean = mean[labels,:]
         X = np.random.randn(n,dim)/np.sqrt(k) + mean
         return decompose(X)[1]
+    
+    
+    def sample(self, n_or_labels):
+        """
+        Generate samples from the von Mises-Fisher distribution.
+        If self contains a single distribution, supply n, the number of
+        required samples.
+        If self contains multiple distributions, supply labels (n, ) to select
+        for each sample the distribution to be sampled from.
+        Reference:
+        o Stochastic Sampling of the Hyperspherical von Mises–Fisher Distribution
+          Without Rejection Methods - Kurz & Hanebeck, 2015
+        o Simulation of the von Mises-Fisher distribution - Wood, 1994
+        """
+
+        dim, mu = self.dim, self.mu
+
+        if np.isscalar(n_or_labels):   # n iid samples from a single distribution
+            n = n_or_labels
+            assert mu.ndim == 1
+            assert np.isscalar(self.k)
+            X = np.vstack([sample_vmf_canonical_mu(dim,self.k) for i in range(n)])
+            X = rotate_to_mu(X,mu)
+
+        else:                          # index distribution by labels 
+            labels = n_or_labels
+            assert mu.ndim == 2
+            if np.isscalar(self.k):    # broadcast k
+                kk = np.full((len(labels),),self.k)
+            else:
+                kk = self.k[labels]
+
+            X = np.vstack([sample_vmf_canonical_mu(dim,k) for k in kk])
+
+            for lab in np.unique(labels):
+                ii = labels==lab
+                X[ii] = rotate_to_mu(X[ii],mu[lab])
+
+        return X
         
         
     def logpdf(self, X):
@@ -341,7 +382,9 @@ class VMF:
     
     
     def __repr__(self):
-        return f"VMF(dim={self.dim}, k={self.k})"
+        if np.isscalar(self.k):
+            return f"VMF(mu:{self.mu.shape}, k={self.k})"
+        return f"VMF(mean:{self.mean.shape}, k:{self.k.shape})"
 
     
 if __name__ == "__main__":

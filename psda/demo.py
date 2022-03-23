@@ -10,7 +10,7 @@ This demo uses a quick-and-dirty data simulator, using Gaussians, not VMF.
 It does not work for high dimensions. But you can play with dim = 2 or 3 
 if you like. 
 """
-dim = 20
+dim = 100
 b, w = 10, 50  # within, between concentrations 
 
 ns = 100  # number of training speakers
