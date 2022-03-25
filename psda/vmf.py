@@ -189,8 +189,12 @@ def decompose(x):
     """
     if x.ndim == 1:
         norm = np.sqrt((x**2).sum(axis=-1))
+        if norm == 0: return 0.0, x
         return norm, x/norm
     norm = np.sqrt((x**2).sum(axis=-1,keepdims=True))
+    zeros = norm == 0
+    if any(zeros):
+        norm[zeros] = 1
     return norm.ravel(), x/norm
         
 def compose(norm,mu):
