@@ -6,7 +6,7 @@ from psda.psda import VMF, PSDA, decompose, atleast2
 from pyllr import quick_eval
 
 dim = 256
-b, w = 100, 150  # within, between concentrations 
+b, w = 30, 800  # within, between concentrations 
 
 ns = 500  # number of training speakers
 n = 10000  # numer of training examples
