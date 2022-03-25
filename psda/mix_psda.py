@@ -9,43 +9,53 @@ from psda.vmf import VMF, compose, decompose
 
 
 
-class PSDA:
+
+
+class ZPost:
+    def __init__(self, mix_psda, SumX):
+        logp = mix_psda.logp
+        self.w = w = mix_psda.w
+        
+        
+        self.n = len(logp)                     # number of mixture components 
+        self.m = SumX.shape[0]                 # number of speakers 
+        self.bmu = mix_psda.bmu                # (n,dim)
+        self.SX = SumX                         # (m,dim)
+        
+
+
+
+
+
+
+class MixPSDA:
     """
     Probabilistic Spherical Discriminant Analysis Model
     
     """
     
-    def __init__(self, within_concentration:float, between_distr:VMF):
+    def __init__(self, weights, within_concentrations:float, between_distrs:VMF):
         """        
-        model = PSDA(w, VMF(mu, b))  
-                
-                w,b > 0 
-                mu (dim, ) is a lengh-normalized speaker mean
-                
-                
-                or
-                
-        model = PSDA(w, VMF(mean))  
-                
-                w,b > 0, 
-                mean (dim,) is speaker mean inside (not on) unit hypersphere
-                            
-                or
-                
-        model = PSDA.em(means,counts) # see the documention for em()   
-        
 
 
         """
-        self.w = w = within_concentration
-        self.between = between = between_distr
+        self.p = p = weights
+        self.logp = np.log(p)
+        self.n = n = len(p)
+
+        self.w = w = within_concentrations
+        self.between = between = between_distrs
         self.b = b = between.k
         self.dim = between.dim
-        self.mu = between.mu
-        self.bmu = between.kmu
+        self.mu = mu = between.mu
+        self.bmu = bmu = between.kmu
+        self.wbmu = w.respahe(-1,1)*bmu
         self.logC = logC = between.logC
         self.logCb = logC(b)
         self.logCw = logC(w)
+
+
+        assert n == len(w) == len(b) == mu.shape[0] 
         
         
     def zposterior(self, data_sum:ndarray):
