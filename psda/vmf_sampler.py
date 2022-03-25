@@ -15,7 +15,7 @@ def rotate_to_mu(X,mu):
     return X@Q.T
 
 
-def sample_vmf_canonical_mu(dim, k, rng=None):
+def sample_vmf_canonical_mu(dim, k, rng=drng):
     """
     Generate samples from the von Mises-Fisher distribution
     with canonical mean, mu = [1,0,...,0]
@@ -32,7 +32,6 @@ def sample_vmf_canonical_mu(dim, k, rng=None):
     returns: one sample (dim, )  
     
     """
-    if rng is None: rng = drng
 
     # VM*, step 0:
     b = (-2*k + np.sqrt(4*k**2 + (dim-1)**2))/(dim-1)  # (eqn 4)
@@ -55,4 +54,12 @@ def sample_vmf_canonical_mu(dim, k, rng=None):
 
     X = np.append(W, V*np.sqrt(1 - W**2))
     return X
-    
+
+
+def sample_uniform(dim, n=None, rng=drng):
+    randn = lambda *args: rng.normal(size=args)
+    if n is None:
+        r = randn(dim)
+        return r/np.linalg.norm(r)
+    R = randn(n, dim)
+    return R/np.linalg.norm(R,axis=-1,keepdims=True)

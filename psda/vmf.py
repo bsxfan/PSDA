@@ -4,7 +4,7 @@ from scipy.special import ive, gammaln, logsumexp
 from scipy.optimize import toms748
 
 
-from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu
+from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
 
 def logfactorial(x):
     """
@@ -118,13 +118,21 @@ class LogNormConst:
         The limit at k--> 0 exists, but is not implemented yet 
         
         """
-        assert k >= 0
         nu, logInu = self.nu, self.logInu
-        # min (nu=dim/2-1) = 0, so 1e-20 << sqrt(1+nu), 
-        # but just testing for k==0 works too  
-        if k < 1e-20:     
-            return nu*np.log(2) + gammaln(nu+1)
-        return nu*np.log(k) - logInu(k) 
+        if np.isscalar(k):        
+            assert k>= 0
+            # min (nu=dim/2-1) = 0, so 1e-20 << sqrt(1+nu), 
+            # but just testing for k==0 works too  
+            if k < 1e-20:     
+                return nu*np.log(2) + gammaln(nu+1)
+            return nu*np.log(k) - logInu(k) 
+        y = np.zeros_like(k)
+        assert all(k >= 0)
+        zeros = k < 1e-20
+        nz = np.logical_not(zeros)
+        y[zeros] = nu*np.log(2) + gammaln(nu+1)
+        y[nz] = nu*np.log(k[nz]) - logInu(k[nz]) 
+        return y
 
     
     def rho(self,k):
@@ -217,7 +225,7 @@ class VMF:
     """
     Von Mises-Fisher distribution. The parameters are supplied at construction. 
     """
-    def __init__(self, mu, k = None, logC = None):
+    def __init__(self, mu=None, k = None, logC = None):
         """
         mu: (dim, ): mean direction, must be lengh-normalized.
             
@@ -239,6 +247,9 @@ class VMF:
                    supplied to save memory and compute. 
         
         """
+        if np.isscalar(mu):  # dim <- mu, k <- 0
+            k = 0.0
+            mu = sample_uniform(mu)
         if k is None:
             kmu = mu
             k, mu = decompose(mu)
@@ -270,6 +281,11 @@ class VMF:
         """
         return self.kmu
         
+    @classmethod
+    def uniform(cls, dim):
+        return cls(dim)
+    
+    
     @classmethod
     def max_likelihood(cls, mean, logC = None):    
         """
@@ -350,6 +366,8 @@ class VMF:
             n = n_or_labels
             assert mu.ndim == 1
             assert np.isscalar(self.k)
+            if self.k==0:
+                return sample_uniform(dim,n)
             X = np.vstack([sample_vmf_canonical_mu(dim,self.k) for i in range(n)])
             X = rotate_to_mu(X,mu)
 
