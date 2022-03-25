@@ -118,7 +118,12 @@ class LogNormConst:
         The limit at k--> 0 exists, but is not implemented yet 
         
         """
+        assert k >= 0
         nu, logInu = self.nu, self.logInu
+        # min (nu=dim/2-1) = 0, so 1e-20 << sqrt(1+nu), 
+        # but just testing for k==0 works too  
+        if k < 1e-20:     
+            return nu*np.log(2) + gammaln(nu+1)
         return nu*np.log(k) - logInu(k) 
 
     
