@@ -22,13 +22,6 @@ class PSDA:
                 w,b > 0 
                 mu (dim, ) is a lengh-normalized speaker mean
                 
-                
-                or
-                
-        model = PSDA(w, VMF(mean))  
-                
-                w,b > 0, 
-                mean (dim,) is speaker mean inside (not on) unit hypersphere
                             
                 or
                 
