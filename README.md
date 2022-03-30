@@ -2,9 +2,9 @@
 ## Probabilistic _Spherical_ Discriminant Analysis
 
 This is a Python implementation of the algorithms described in our (submitted) Interspeech 2022 paper: 
-> Probabilistic Spherical Discriminant Analysis: An Alternative to PLDA for length-normalized embeddings
+> [Probabilistic Spherical Discriminant Analysis: An Alternative to PLDA for length-normalized embeddings](https://arxiv.org/abs/2203.14893)
 
-The paper will be posted on ArXiV after the Interspeech submit deadline.
+- Please cite this paper if you find our code useful.
 
 Probabilistic _Linear_ Discrimnant Analysys (PLDA) is a trainable scoring backend that can be used for things like speaker/face recognition or clustering, or speaker diarization. PLDA uses the self-conjugacy of multivariate Gaussians to obtain closed-form scoring and closed-form EM updates for learning. Some of the Gaussian assumptions of the PLDA model are violated when embeddings are length-normalized.
 
