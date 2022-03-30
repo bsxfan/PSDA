@@ -156,6 +156,11 @@ class LogBesselIPair:
     
     
     def rho(self,x):
+        if np.isscalar(x):
+            if x == 0: return 0, 1/(2*(self.nu+1))  # limit at 0
+            y, dydx = self.rho(np.array[x])
+            return y[0], dydx[0]
+        assert all(x > 0), 'zeros in array argument not coded yet'
         logx = np.log(x)
         logr, dlogr_dlogx = self.logRho(logx)
         r = np.exp(logr)
