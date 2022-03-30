@@ -138,6 +138,27 @@ class LogBesselIPair:
         y1 = self.logI1(x,logx)
         dy_dlogx = nu + np.exp(logx + y1 - y)    
         return y, dy_dlogx
+    
+    
+    def logCvmf(self,log_kappa):
+        """
+        log normalization constant (numerator) for Von-Mises-Fisher 
+        distribution, with nu = dim/2-1
+        
+        input: log_kappa, where kappa > 0 is the concentration
+        
+        The limit at kappa=0 is not handled in this call, but: 
+        - The limit of the function value is nu log(2) + log Gamma(nu+1)
+        - The derivative limit I don't have yet.
+        
+        
+        """
+        nu = self.nu
+        logI, dlogI_dlogkappa = self.logI(log_kappa)
+        y = nu*log_kappa - logI
+        dy_dlogkappa = nu - dlogI_dlogkappa
+        return y, dy_dlogkappa
+        
 
 
 
