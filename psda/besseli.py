@@ -79,6 +79,49 @@ class LogBesselI:
 
 
 
+    def logCvmf(self,log_kappa):
+        """
+        log normalization constant (numerator) for Von-Mises-Fisher 
+        distribution, with nu = dim/2-1
+        
+        
+            log Cvmf(kappa) = log [ nu^kappa / I_nu(kappa) ]
+            
+            
+            VMF(x | mu, kappa) \propto Cvmf(kappa) exp[kappa*mu'x]
+            
+        
+        
+        input: log_kappa, where kappa >= 0 is the concentration
+        
+        returns: function value(s) 
+                 
+                 The output has the same shape as the input.
+
+
+        Notes:
+            
+            Cvmf omits a factor that is dependent only on the dimension.
+        
+            The limit at kappa=0 is handled in this call, if you set 
+            log_kappa = -np.inf. This only works for a scalar input.
+            
+            If you need the derivative, see LogBesselIPair.logCvmf().               
+        
+        
+        """
+        nu = self.nu
+        if np.isscalar(log_kappa) and log_kappa == -np.inf:
+            return nu*log2 + gammaln(nu+1)
+        logI, dlogI_dlogkappa = self.logI(log_kappa)
+        y = nu*log_kappa - logI
+        dy_dlogkappa = nu - dlogI_dlogkappa
+        return y, dy_dlogkappa
+
+
+
+
+
 class LogBesselIPair:
     """
     This is a callable that computes log I_nu and log I_{nu+1} and their
@@ -97,6 +140,9 @@ class LogBesselIPair:
     
     d/dx I(nu+1,x) = I(nu, z) - ((nu+1)/x) I(nu+1,x)
     
+    
+    What is rho? For a Von Mises-Fisher distribution, with concentration kappa,
+    0 <= rho(kappa) < 1 gives the radius of the expected value. 
     
     
     """
@@ -145,11 +191,27 @@ class LogBesselIPair:
         log normalization constant (numerator) for Von-Mises-Fisher 
         distribution, with nu = dim/2-1
         
+        
+            Cvmf(kappa) = nu^kappa / I_nu(kappa)
+        
+        
         input: log_kappa, where kappa > 0 is the concentration
         
-        The limit at kappa=0 is not handled in this call, but: 
-        - The limit of the function value is nu log(2) + log Gamma(nu+1)
-        - The derivative limit I don't have yet.
+        returns: function value(s), derivative(s) 
+                 
+                 Both outputs have the same shape as the input.
+
+
+        Notes:
+            
+            Cvmf omits a factor that is dependent only on the dimension.
+        
+            The limit at kappa=0 is not handled in this call, because in
+            an optimization context, log_kappa should remain finite. But in 
+            case you find it useful elsewhere (arxiv.org/abs/2203.14893): 
+            
+                lim_{kappa --> 0} Cvmf(kappa) = 2^nu Gamma(nu+1)
+                
         
         
         """
