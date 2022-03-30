@@ -107,6 +107,8 @@ class LogBesselIPair:
         
     def __call__(self, logx):
         """
+        input: logx
+
         For y, y1 = logI_nu(x), logI_{nu+1}, 
         returns: y, y1, dy_dlogx, dy1_dlogx
         
@@ -123,6 +125,8 @@ class LogBesselIPair:
 
     def logI(self, logx):
         """
+        input: logx
+
         For y = logI_nu(x)
         returns: y, dy_dlogx
         
@@ -140,9 +144,10 @@ class LogBesselIPair:
         
     def logRho(self,logx):
         """
-        rho(x) = I_nu+1(x) / I_nu(x), for x > 0
-        
-        return: log rho(x), dlogrho_dlox
+        input: logx
+
+        For rho(x) = I_nu+1(x) / I_nu(x)
+        returns: log rho(x), dlogrho_dlogx
     
         """
 
@@ -156,6 +161,15 @@ class LogBesselIPair:
     
     
     def rho(self,x):
+        """
+        input: x
+        
+        For y = rho(x)
+        returns: y, dy_dx
+        
+        The limit at x = 0 is implemented on for scalar x
+        
+        """
         if np.isscalar(x):
             if x == 0: return 0, 1/(2*(self.nu+1))  # limit at 0
             y, dydx = self.rho(np.array[x])
