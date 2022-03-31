@@ -84,7 +84,7 @@ class LogBesselI:
         if np.isscalar(x):
             assert x >= 0
             if x == 0: return self.at0
-            return self.__call__(np.array([x]))[0]
+            return self.log_ive(np.array([x]))[0]
         assert all(x >= 0)
         y = ive(self.nu,x)  
         ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
@@ -295,7 +295,7 @@ class LogBesselIPair:
 def softplus(x): 
     return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)
 
-def fastLogCvmf_e(nu, c=-6, target=None):
+def fastLogCvmf_e0(nu, c=-6):
     left = nu*log2 + gammaln(nu+1)     # left flat asymptote
     right_offs = log2pi/2              # offset for right linear asymptote
     right_slope = nu + 0.5             # slope for right linear asymptote
@@ -307,21 +307,52 @@ def fastLogCvmf_e(nu, c=-6, target=None):
     
     
     f = lambda x: a + b*softplus(c + d*x)
-    if target is None: return f
+    return f
     
-def fastLogCvmf_e2(nu, d, target=None):
+
+from scipy.optimize import minimize_scalar
+def fastLogCvmf_e(nu, d=np.pi, target=None):
     left = nu*log2 + gammaln(nu+1)     # left flat asymptote
     right_offs = log2pi/2              # offset for right linear asymptote
     right_slope = nu + 0.5             # slope for right linear asymptote
     
     a = left
-    b = right_slope / d
-    c = (right_offs - a) / b
-    print(f'nu={nu}: b={b}, c = {c}, d={d}')
+    def bc(d): 
+        b = right_slope / d
+        c = (right_offs - a) / b
+        return b, c
+    b, c = bc(d)    
+    #print(f'nu={nu}: b={b}, c = {c}, d={d}')
     
     
     f = lambda x: a + b*softplus(c + d*x)
     if target is None: return f
+    
+    neg_err = lambda x: -(f(x)-target(x))**2
+    x = minimize_scalar(neg_err,(2.0,4.0)).x
+    tarx = target(x)
+    
+    print(f'\ntuning softplus for nu={nu}')
+    print(f'  max abs error of {np.sqrt(-neg_err(x))} at {x}')
+    
+    def obj(d):
+        b, c = bc(d)    
+        fx = a + b*softplus(c + d*x)
+        return (fx-tarx)**2
+    d = minimize_scalar(obj,(d*0.9,d*1.1)).x
+    print(f'  new d={d}')
+    b, c = bc(d)
+    
+    f = lambda x: a + b*softplus(c + d*x)
+
+    neg_err = lambda x: -(f(x)-target(x))**2
+    x = minimize_scalar(neg_err,(2.0,4.0)).x
+    tarx = target(x)
+    print(f'  new max abs error of {np.sqrt(-neg_err(x))} at {x}')
+
+
+    return f
+    
     
 if __name__ == "__main__":
     
@@ -343,7 +374,7 @@ if __name__ == "__main__":
         ref = logBesselI_ive(nu, k)
     
     
-    
+    plt.figure()
     plt.semilogx(k,small,'g',label='small')
     plt.semilogx(k,ref,'r--',label='ref')
     plt.semilogx(k,ref-small,label='err')
@@ -357,6 +388,7 @@ if __name__ == "__main__":
     pair = LogBesselIPair(100)
     logx = np.linspace(-6,14,200)
     logr, ddlogx = pair.logRho(logx)
+    plt.figure()
     plt.plot(logx,np.exp(logr),label='rho')
     plt.plot(logx,ddlogx*np.exp(logr),label='dy/dx')
     plt.grid()
@@ -370,6 +402,7 @@ if __name__ == "__main__":
     
     logx = np.linspace(-6,20,200)
     #x = np.exp(logx)
+    plt.figure()
     for dim in [128, 256, 512]:
         nu = dim/2-1
         bi = LogBesselI(nu)
@@ -390,14 +423,18 @@ if __name__ == "__main__":
 
     logx = np.linspace(0,9,200)
     #x = np.exp(logx)
+    plt.figure()
+    #for dim in [100, 110, 120]:
     for dim in [128, 256, 512]:
         nu = dim/2-1
         bi = LogBesselI(nu)
-        #y = bi.logCvmf(logx)
-        y = bi.logCvmf_e(logx)
+        target = bi.logCvmf_e
+        y = target(logx)
         plt.plot(logx,y,label=f'dim={dim}')
-        y = fastLogCvmf_e2(nu,d=1.1)(logx)
-        plt.plot(logx,y,'--')
+        err = fastLogCvmf_e(nu, target=target)(logx)
+        plt.plot(logx,err,'--')
+        #y = fastLogCvmf_e(nu)(logx)
+        #plt.plot(logx,y,'--')
     plt.grid()
     plt.xlabel('log k')
     plt.ylabel('log C_nu(k) + k')
