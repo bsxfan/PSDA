@@ -77,6 +77,23 @@ class LogBesselI:
         y[uf] = self.small(logx)      # fix underflows 
         return y
 
+    def log_ive(self, x, logx = None):
+        """
+        Also supply logx if available
+        """
+        if np.isscalar(x):
+            assert x >= 0
+            if x == 0: return self.at0
+            return self.__call__(np.array([x]))[0]
+        assert all(x >= 0)
+        y = ive(self.nu,x)  
+        ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
+        uf = np.logical_not(ok)                # underflow if y==0 and x > 0
+        with np.errstate(divide='ignore'):
+            y[ok] = np.log(y[ok])              # y may be 0 if x ==0 
+        logx =  np.log(x[uf]) if logx is None else logx[uf]
+        y[uf] = self.small(logx) - x[uf]      # fix underflows 
+        return y
 
 
     def logCvmf(self,log_kappa):
@@ -113,11 +130,21 @@ class LogBesselI:
         nu = self.nu
         if np.isscalar(log_kappa) and log_kappa == -np.inf:
             return nu*log2 + gammaln(nu+1)
-        logI, dlogI_dlogkappa = self.logI(log_kappa)
+        logI = self(np.exp(log_kappa),log_kappa)
         y = nu*log_kappa - logI
-        dy_dlogkappa = nu - dlogI_dlogkappa
-        return y, dy_dlogkappa
+        return y
+    
+    
 
+    def logCvmf_e(self,log_kappa):
+        """
+        """
+        nu = self.nu
+        if np.isscalar(log_kappa) and log_kappa == -np.inf:
+            return nu*log2 + gammaln(nu+1)
+        log_ive = self.log_ive(np.exp(log_kappa),log_kappa)
+        y = nu*log_kappa - log_ive
+        return y
 
 
 
@@ -265,8 +292,36 @@ class LogBesselIPair:
         return r, dr_dx
 
 
+def softplus(x): 
+    return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)
 
-
+def fastLogCvmf_e(nu, c=-6, target=None):
+    left = nu*log2 + gammaln(nu+1)     # left flat asymptote
+    right_offs = log2pi/2              # offset for right linear asymptote
+    right_slope = nu + 0.5             # slope for right linear asymptote
+    
+    a = left
+    b = (right_offs - a) / c
+    d = right_slope / b
+    print(f'nu={nu}: b={b}, c = {c}, d={d}')
+    
+    
+    f = lambda x: a + b*softplus(c + d*x)
+    if target is None: return f
+    
+def fastLogCvmf_e2(nu, d, target=None):
+    left = nu*log2 + gammaln(nu+1)     # left flat asymptote
+    right_offs = log2pi/2              # offset for right linear asymptote
+    right_slope = nu + 0.5             # slope for right linear asymptote
+    
+    a = left
+    b = right_slope / d
+    c = (right_offs - a) / b
+    print(f'nu={nu}: b={b}, c = {c}, d={d}')
+    
+    
+    f = lambda x: a + b*softplus(c + d*x)
+    if target is None: return f
     
 if __name__ == "__main__":
     
@@ -309,15 +364,45 @@ if __name__ == "__main__":
     plt.ylabel('rho')
     plt.title('nu = 100')
     plt.legend()
+    plt.show()
     
     
     
-    
+    logx = np.linspace(-6,20,200)
+    #x = np.exp(logx)
+    for dim in [128, 256, 512]:
+        nu = dim/2-1
+        bi = LogBesselI(nu)
+        #y = bi.logCvmf(logx)
+        y = bi.logCvmf_e(logx)
+        plt.plot(logx,y,label=f'dim={dim}')
+        y = (nu+0.5)*logx + log2pi/2
+        plt.plot(logx,y,'--')
+    plt.grid()
+    plt.xlabel('log k')
+    plt.ylabel('log C_nu(k) + k')
+    plt.legend()
+    plt.show()
     
     
 
+    
 
-
+    logx = np.linspace(0,9,200)
+    #x = np.exp(logx)
+    for dim in [128, 256, 512]:
+        nu = dim/2-1
+        bi = LogBesselI(nu)
+        #y = bi.logCvmf(logx)
+        y = bi.logCvmf_e(logx)
+        plt.plot(logx,y,label=f'dim={dim}')
+        y = fastLogCvmf_e2(nu,d=1.1)(logx)
+        plt.plot(logx,y,'--')
+    plt.grid()
+    plt.xlabel('log k')
+    plt.ylabel('log C_nu(k) + k')
+    plt.legend()
+    plt.show()
     
         
         
