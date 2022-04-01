@@ -1,6 +1,6 @@
 import numpy as np
 
-from psda.besseli import fastLogCvmf_e
+from psda.besseli import fastLogCvmf_e, fast_logrho
 
 
 
@@ -49,30 +49,17 @@ if __name__ == "__main__":
     
     
     dim = 128
+    
+    
     nu = dim/2 -1
     
-    logI = FastLogI(nu)
+    # logI = FastLogI(nu)
     
     
-    log_kappa = np.linspace(-5,15,200)
+    # log_kappa = np.linspace(-5,15,200)
     
-    fast = logI.logrho(log_kappa)
-    slow = logI.logrho(log_kappa, slow=True)
-    
-    plt.figure()
-    plt.plot(log_kappa,slow,label='slow')
-    plt.plot(log_kappa,fast,'--',label='fast')
-    plt.grid()
-    plt.legend()
-    plt.xlabel('log kappa')
-    plt.ylabel('rho')
-    
-    
-    
-    # log_kappa = np.linspace(-5,20,200)
-
-    # fast = logI.rho(log_kappa)
-    # slow = logI.rho(log_kappa, slow=True)
+    # fast = logI.logrho(log_kappa)
+    # slow = logI.logrho(log_kappa, slow=True)
     
     # plt.figure()
     # plt.plot(log_kappa,slow,label='slow')
@@ -80,7 +67,28 @@ if __name__ == "__main__":
     # plt.grid()
     # plt.legend()
     # plt.xlabel('log kappa')
-    # plt.ylabel('rho')
+    # plt.ylabel('logrho')
+    
+    
+    #offset = logI.slow(-np.inf) - logI.slow1(-np.inf)
+    #plt.plot(log_kappa,log_kappa+offset)
+    
+    logrho = fast_logrho(nu,quiet=False)    
+    
+    log_kappa = np.linspace(-5,15,200)
+    
+    # fast = np.exp(logrho(log_kappa))
+    # slow = np.exp(logrho.slow(log_kappa))
+    fast = logrho(log_kappa)
+    slow = logrho.slow(log_kappa)
+    
+    plt.figure()
+    plt.plot(log_kappa,slow,label='slow')
+    plt.plot(log_kappa,fast,'--',label='fast')
+    plt.grid()
+    plt.legend()
+    plt.xlabel('log kappa')
+    plt.ylabel('logrho')
     
     
     

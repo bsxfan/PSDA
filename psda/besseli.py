@@ -220,7 +220,7 @@ class LogBesselIPair:
     
     
     What is rho? For a Von Mises-Fisher distribution, with concentration kappa,
-    0 <= rho(kappa) < 1 gives the radius of the expected value. 
+    0 <= rho(kappa) < 1 gives the norm of the expected value. 
     
     
     """
@@ -348,7 +348,48 @@ def softplus(x):
 
     
 
-def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True):
+def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
+    
+    """
+    This works very well for large nu and worst for nu=0 (VMF dim = 2). 
+    
+    It tunes a pre-and-post-scaled-and-shifted softplus approximation to the
+    function:
+    
+         log Cvmf_e(log kappa). 
+         
+    The approximation always obays the left limit and the right 
+    linear asymptote.
+    
+    
+    The true functions for small nu are less smooth than our approximations,
+    espically for n=0, which has an extra bulge below the softplus elbow.
+    
+    
+    inputs: 
+        
+        nu >=0, the Bessel-I order  (nu=dim/2-1 for VMF distribution)
+        
+        d>0: (default = pi) the tunable softplus input scaling factor
+        
+        tune: boolean (default True)
+        
+        quiet: boolean (default True), print tuning progress if False
+    
+        err: an optional tuning objective
+    
+    
+    returns: 
+        
+            f: a function handle for the fast approximation, with:
+                
+                f.nu 
+                f.params = (a,b,c,d), the scaling and shifting constants
+                f.slow, function handle the slower reference implementation
+    
+    """
+    
+    
     left = nu*log2 + gammaln(nu+1)     # left flat asymptote
     right_offs = log2pi/2              # offset for right linear asymptote
     right_slope = nu + 0.5             # slope for right linear asymptote
@@ -369,9 +410,11 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True):
         f.params = (a,b,c,d)
         return f
     
-    neg_err = lambda x: -(f(x)-target(x))**2
+    if err is None:
+        err = lambda x,y: (y-target(x))**2
+    neg_err = lambda x: -err(x,f(x))
     x = minimize_scalar(neg_err,(2.0,4.0)).x
-    tarx = target(x)
+    #tarx = target(x)
     
     if not quiet:
         print(f'\ntuning softplus for nu={nu}')
@@ -380,7 +423,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True):
     def obj(d):
         b, c = bc(d)    
         fx = a + b*softplus(c + d*x)
-        return (fx-tarx)**2
+        return err(x,fx)
     d = minimize_scalar(obj,(d*0.9,d*1.1)).x
     if not quiet: print(f'  new d={d}, local error = {obj(d)}')
     b, c = bc(d)
@@ -388,15 +431,78 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True):
     # this happens anyway, f already sees the new b,c,d
     # f = lambda x: a + b*softplus(c + d*x)
 
-    neg_err = lambda x: -(f(x)-target(x))**2
     x = minimize_scalar(neg_err,(2.0,4.0)).x
-    tarx = target(x)
     if not quiet: print(f'  new max abs error of {np.sqrt(-neg_err(x))} at {x}')
 
     f.params = (a,b,c,d)
 
     return f
     
+
+
+def fast_logrho(nu, quiet = True):
+    """
+    This works ok for nu=0 and well for nu>0
+    
+    It tunes two softplus log Cvmf_e approximations and uses their difference
+    to approximate log rho. 
+    
+    
+    inputs: 
+        
+        nu >=0, the Bessel-I order  (nu=dim/2-1 for VMF distribution)
+        
+        quiet: boolean (default True), print tuning progress if False
+    
+    
+    
+    returns: 
+        
+            f: a function handle for the fast approximation, with:
+                
+                f.nu 
+                f.params = (a,b,c,d), the scaling and shifting constants
+                f.slow, function handle the slower reference implementation
+    
+
+
+    Note: An altenative is to tune exp(softplus-approx) to fit rho. The 
+          approximation is a sigmoid. rho(log_kappa) is close to a sigmoid, but
+          is somewhat less smooth, especially for small nu.
+
+
+
+    """
+    
+    
+    C = fastLogCvmf_e(nu,tune=nu>0,quiet=quiet)
+    C1slow = LogBesselI(nu+1).logCvmf_e
+    
+    def teacher(x):
+        return x + C.slow(x) - C1slow(x)
+
+    
+    def student1(x,c1):
+        return x + C(x) - c1
+    
+    
+    def err1(x,c1):
+        return (np.exp(teacher(x))-np.exp(student1(x,c1)))**2
+    
+    
+    C1 = fastLogCvmf_e(nu+1, quiet=quiet, err=err1)
+    
+    
+    f = lambda x: x + C(x) - C1(x)
+    f.slow = teacher
+    f.nu = nu
+    f.C = C
+    f.C1 = C1
+
+    return f    
+    
+
+
     
 if __name__ == "__main__":
     
@@ -465,13 +571,15 @@ if __name__ == "__main__":
 
     
 
-    logx = np.linspace(0,9,200)
+    logx = np.linspace(-5,4,200)
     #x = np.exp(logx)
     plt.figure()
     #for dim in [100, 110, 120]:
-    for dim in [128, 256, 512]:
+    #for dim in [128, 256, 512]:
+    for dim in [2, 3, 4]:
         nu = dim/2-1
-        fast = fastLogCvmf_e(nu,tune=True,quiet=False)
+        #fast = fastLogCvmf_e(nu,tune=nu>0,quiet=False)
+        fast = fastLogCvmf_e(nu,tune=nu>0,quiet=False)
         target = fast.slow
         y = target(logx)
         plt.plot(logx,y,label=f'dim={dim}')
