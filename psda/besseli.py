@@ -1,6 +1,7 @@
 import numpy as np
 
 from scipy.special import gammaln, logsumexp, ive
+from scipy.optimize import minimize_scalar
 
 logfactorial = lambda x: gammaln(x+1)
 log2 = np.log(2)
@@ -46,7 +47,7 @@ class LogBesselI:
         self.nu = nu
         self.n = n
         m = np.arange(n)
-        self.exp = (2*m+nu).reshape(-1,1)
+        self.exponent = (2*m+nu).reshape(-1,1)
         self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
         self.at0 = 0.0 if nu==0 else -np.inf
 
@@ -54,14 +55,32 @@ class LogBesselI:
         """
         short series expansion for log Inu(x) for 0 < x, smallish 
         """
-        num = self.exp*(logx-log2)
+        num = self.exponent * (logx-log2)
         return logsumexp(num-self.den,axis=0)
 
 
 
     def __call__(self, x, logx = None):
         """
-        Also supply logx if available
+        Evaluates log I(nu, x), so that it also works for small values of x.
+          - x = 0 is valid
+          - scipy.special.ive is used, unless it underflows
+          - underflow happens when x is small relative to nu, this is
+            fixed by a logsumexp low-order series epansion
+        
+        
+        inputs:
+            
+            x: scalar or vector, the values should be non-negative
+               if x==0 and nu > 0 -inf is returned quietly
+               if x==0 and nu = 0, 0 is returned
+               
+            logx: make this available if you already have it lying around,
+                  it is needed when x is small
+                  
+                  
+        returns: scalar or vector log I(nu,x)          
+        
         """
         if np.isscalar(x):
             assert x >= 0
@@ -79,7 +98,22 @@ class LogBesselI:
 
     def log_ive(self, x, logx = None):
         """
-        Also supply logx if available
+        Returns log [I(nu, x) exp(-x)] = log I(nu,x) - x. 
+            
+        See __call__ for more details.
+        
+        inputs:
+            
+            x: scalar or vector, the values should be non-negative
+               if x==0 and nu > 0 -inf is returned quietly
+               if x==0 and nu = 0, 0 is returned
+               
+            logx: make this available if you already have it lying around,
+                  it is needed when x is small
+                  
+                  
+        returns: scalar or vector log I(nu,x)          
+        
         """
         if np.isscalar(x):
             assert x >= 0
@@ -102,7 +136,7 @@ class LogBesselI:
         distribution, with nu = dim/2-1
         
         
-            log Cvmf(kappa) = log [ nu^kappa / I_nu(kappa) ]
+            log Cvmf(kappa) = log [ kappa^nu / I_nu(kappa) ]
             
             
             VMF(x | mu, kappa) \propto Cvmf(kappa) exp[kappa*mu'x]
@@ -138,10 +172,27 @@ class LogBesselI:
 
     def logCvmf_e(self,log_kappa):
         """
+        log normalization constant (numerator) for Von-Mises-Fisher 
+        distribution, with nu = dim/2-1
+        
+        
+            log Cvmf_e(kappa) = log [ kappa^nu / (I_nu(kappa) exp(-kappa)) ]
+                              = nu*log(kappa) + kappa - log I_nu(kappa)            
+            
+            VMF(x | mu, kappa) \propto Cvmf_e(kappa) exp[kappa*(mu'x-1)]
+            
+        
+        
+        input: log_kappa, where kappa >= 0 is the concentration
+        
+        returns: function value(s) 
+                 
+                 The output has the same shape as the input.
         """
+        
         nu = self.nu
         if np.isscalar(log_kappa) and log_kappa == -np.inf:
-            return nu*log2 + gammaln(nu+1)
+            return nu*log2 + gammaln(nu+1)  # yes, this is the same as logCvmf(-inf)
         log_ive = self.log_ive(np.exp(log_kappa),log_kappa)
         y = nu*log_kappa - log_ive
         return y
@@ -295,23 +346,9 @@ class LogBesselIPair:
 def softplus(x): 
     return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)
 
-def fastLogCvmf_e0(nu, c=-6):
-    left = nu*log2 + gammaln(nu+1)     # left flat asymptote
-    right_offs = log2pi/2              # offset for right linear asymptote
-    right_slope = nu + 0.5             # slope for right linear asymptote
-    
-    a = left
-    b = (right_offs - a) / c
-    d = right_slope / b
-    print(f'nu={nu}: b={b}, c = {c}, d={d}')
-    
-    
-    f = lambda x: a + b*softplus(c + d*x)
-    return f
     
 
-from scipy.optimize import minimize_scalar
-def fastLogCvmf_e(nu, d=np.pi, target=None):
+def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True):
     left = nu*log2 + gammaln(nu+1)     # left flat asymptote
     right_offs = log2pi/2              # offset for right linear asymptote
     right_slope = nu + 0.5             # slope for right linear asymptote
@@ -326,30 +363,37 @@ def fastLogCvmf_e(nu, d=np.pi, target=None):
     
     
     f = lambda x: a + b*softplus(c + d*x)
-    if target is None: return f
+    f.nu = nu
+    f.slow = target = LogBesselI(nu).logCvmf_e
+    if not tune: 
+        f.params = (a,b,c,d)
+        return f
     
     neg_err = lambda x: -(f(x)-target(x))**2
     x = minimize_scalar(neg_err,(2.0,4.0)).x
     tarx = target(x)
     
-    print(f'\ntuning softplus for nu={nu}')
-    print(f'  max abs error of {np.sqrt(-neg_err(x))} at {x}')
+    if not quiet:
+        print(f'\ntuning softplus for nu={nu}')
+        print(f'  max abs error of {np.sqrt(-neg_err(x))} at {x}')
     
     def obj(d):
         b, c = bc(d)    
         fx = a + b*softplus(c + d*x)
         return (fx-tarx)**2
     d = minimize_scalar(obj,(d*0.9,d*1.1)).x
-    print(f'  new d={d}')
+    if not quiet: print(f'  new d={d}, local error = {obj(d)}')
     b, c = bc(d)
     
-    f = lambda x: a + b*softplus(c + d*x)
+    # this happens anyway, f already sees the new b,c,d
+    # f = lambda x: a + b*softplus(c + d*x)
 
     neg_err = lambda x: -(f(x)-target(x))**2
     x = minimize_scalar(neg_err,(2.0,4.0)).x
     tarx = target(x)
-    print(f'  new max abs error of {np.sqrt(-neg_err(x))} at {x}')
+    if not quiet: print(f'  new max abs error of {np.sqrt(-neg_err(x))} at {x}')
 
+    f.params = (a,b,c,d)
 
     return f
     
@@ -427,14 +471,11 @@ if __name__ == "__main__":
     #for dim in [100, 110, 120]:
     for dim in [128, 256, 512]:
         nu = dim/2-1
-        bi = LogBesselI(nu)
-        target = bi.logCvmf_e
+        fast = fastLogCvmf_e(nu,tune=True,quiet=False)
+        target = fast.slow
         y = target(logx)
         plt.plot(logx,y,label=f'dim={dim}')
-        err = fastLogCvmf_e(nu, target=target)(logx)
-        plt.plot(logx,err,'--')
-        #y = fastLogCvmf_e(nu)(logx)
-        #plt.plot(logx,y,'--')
+        plt.plot(logx,fast(logx),'--')
     plt.grid()
     plt.xlabel('log k')
     plt.ylabel('log C_nu(k) + k')
