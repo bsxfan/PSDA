@@ -14,9 +14,14 @@ Bessel-I is not available in Pytorch (except for nu = 0 and 1).
     
         
 In this module are some tools to compute log I_nu in regions where iv or ive
-would underflow.
+would underflow, or overflow.
 
-We also have some tools to create a fast, bespoke approximation to log(ive). 
+We also have some tools to create a fast, bespoke approximation to the 
+log of the exponentially scaled normalization constant of the Von Mises-Fisher
+distribution, with nu = dim/2-1 and concentration kappa:
+    
+    log Cvmf_e(nu,kappa) = nu*log(kappa) - log(ive). 
+
 The approximation form is:
 
     affine --> softplus --> affine
@@ -140,11 +145,15 @@ class LogBesselI:
 
     def __call__(self, x, logx = None, exp_scale = False):
         """
-        Evaluates log I(nu, x), so that it also works for small values of x.
+        Evaluates log I(nu, x), so that it also works for small and large 
+        values of x.
+        
           - x = 0 is valid
-          - scipy.special.ive is used, unless it underflows
-          - underflow happens when x is small relative to nu, this is
+          - scipy.special.ive is used, unless it underflows or returns NaN
+          - ive underflow happens when x is small relative to nu, this is
             fixed by a logsumexp low-order series epansion
+          - ive NaN is probably a bug. It happens for large nu and x. It is
+            fixed with a different (small) series expansion.
         
         
         inputs:
@@ -225,7 +234,9 @@ class LogBesselI:
 
     def log_ive(self, x, logx = None):
         """
-        Returns log [I(nu, x) exp(-x)] = log I(nu,x) - x. 
+        Returns exponentially scaled log Bessel-I: 
+            
+            log [I(nu, x) exp(-x)] = log I(nu,x) - x. 
             
         See __call__ for more details.
         
@@ -244,27 +255,9 @@ class LogBesselI:
         """
         
         return self(x, logx, exp_scale = True)
-        # if np.isscalar(x):
-        #     # assert x >= 0
-        #     # if x == 0: return self.at0
-        #     return self.log_ive(np.array([x]))[0]
-
-        # assert all(x >= 0)
-
-        # y = ive(self.nu,x)  
-
-        # ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
-        # uf = np.logical_not(ok)                # underflow if y==0 and x > 0
-        # with np.errstate(divide='ignore'):
-        #     y[ok] = np.log(y[ok])              # y may be 0 if x ==0 
 
 
-        # logx =  np.log(x[uf]) if logx is None else logx[uf]
-        # y[uf] = self.small_log_iv(logx) - x[uf]      # fix underflows 
-        # return y
-
-
-    def logCvmf(self,log_kappa):
+    def logCvmf(self, log_kappa, exp_scaling = False):
         """
         log normalization constant (numerator) for Von-Mises-Fisher 
         distribution, with nu = dim/2-1
@@ -297,8 +290,8 @@ class LogBesselI:
         """
         nu = self.nu
         if np.isscalar(log_kappa) and log_kappa == -np.inf:
-            return nu*log2 + gammaln(nu+1)
-        logI = self(np.exp(log_kappa),log_kappa)
+            return nu*log2 + gammaln(nu+1)  # irrespective of exp_scaling
+        logI = self(np.exp(log_kappa), log_kappa, exp_scaling)
         y = nu*log_kappa - logI
         return y
     
@@ -324,12 +317,8 @@ class LogBesselI:
                  The output has the same shape as the input.
         """
         
-        nu = self.nu
-        if np.isscalar(log_kappa) and log_kappa == -np.inf:
-            return nu*log2 + gammaln(nu+1)  # yes, this is the same as logCvmf(-inf)
-        log_ive = self.log_ive(np.exp(log_kappa),log_kappa)
-        y = nu*log_kappa - log_ive
-        return y
+        return self.logCvmf(log_kappa, exp_scaling=True)
+        
 
 
 
