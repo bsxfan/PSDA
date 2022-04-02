@@ -1,3 +1,38 @@
+"""
+Bessel-I is numerically tricky  it can underflow and overflow and is much 
+slower than typical float functions like log and exp.
+
+Bessel-I is available in a few forms in scipy.special:
+    iv(nu,x): I_nu(x)           # underflows and overflows for large nu
+    ive(nu,x): I_nu(x) exp(-x)  # underflows, better against overflow, but it 
+                                              still happens if x is too large
+    ivp: derivatives for iv
+    
+Bessel-I and even its lagrithm is available in Tensorflow.    
+
+Bessel-I is not available in Pytorch (except for nu = 0 and 1).     
+    
+        
+In this module are some tools to compute log I_nu in regions where iv or ive
+would underflow.
+
+We also have some tools to create a fast, bespoke approximation to log(ive). 
+The approximation form is:
+
+    affine --> softplus --> affine
+
+The affine parameters are tuned for every nu. Tuning invokes scipy.special.ive,
+but once tuned, the approximation can run anywhere without scipy. So it can be 
+used for example in Pytorch (with backprop) on the GPU. No Pytorch tools are 
+included here, but sending the tuned approximation for use on any platform that 
+has a softplus available is trivial. 
+ 
+We found the approximation to be an order of magnitude faster than the (patched)
+scipy.special.ive function.
+
+
+"""
+
 import numpy as np
 
 from scipy.special import gammaln, logsumexp, ive
@@ -7,16 +42,24 @@ logfactorial = lambda x: gammaln(x+1)
 log2 = np.log(2)
 log2pi = np.log(2*np.pi)
 
-def logBesselI_ive(nu, x):
+def log_ive_raw(nu, x):
     """
-    Underflows for x too small relative to nu. 
-    If that happens, ive returns 0 and the log throws
-    a warning and returns -inf.
+    scipy.special.ive underflows for x too small relative to nu. This cannot 
+    be fixed without changing to a logarithmic function return value.   
+    If ive underflows (returns 0), then the log throws a warning and this
+    raw wrapper function returns -inf.
     
-    This behaviour is fixed below.
+    If both nu and x are too large, NaN is returned quietly, 
+    e.g. ive(255,np.exp(21)). I believe this a bug. The function values 
+    for even larger inputs do still have floating point representations.
+    
+    
+    This underflow and NaN behaviour is 'patched up' in the class LogBesselI 
+    and its methods, which provide logrithmic input and output interfaces where 
+    needed. 
     
     """
-    return np.log(ive(nu,x)) + x
+    return np.log(ive(nu,x))
 
 
 
@@ -36,8 +79,12 @@ class LogBesselI:
     
     I_nu(x) >= 0, so log is -inf or real 
     I_nu(x) (and its log) is monotonic rising
+    
     log I_0(0) = 0, 
     log I_nu(0) = -inf (no warning), for nu > 0
+    
+    For large x, I_nu(x) --> exp(x) / sqrt(2 pi x)
+    
     
     """
     
@@ -51,16 +98,47 @@ class LogBesselI:
         self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
         self.at0 = 0.0 if nu==0 else -np.inf
 
-    def small(self,logx):
+    def small_log_iv(self,logx):
         """
-        short series expansion for log Inu(x) for 0 < x, smallish 
+        Short series expansion for: 
+            
+            log iv(nu,x)) = log Inu(x) 
+            
+        for smallish x > 0. At a fixed number of terms, accuracy depends on nu. 
+        We use this series expansion only if ive underflows, effecting an  
+        automatically decision when to invoke this expansion. We found log(ive) 
+        to be accurate up to the point (going to smaller x) where underflow 
+        still does not happen. 
+        
         """
         num = self.exponent * (logx-log2)
         return logsumexp(num-self.den,axis=0)
 
 
+    def large_log_ive(self, logx, asymptote = True):
+        """
+        Evaluates linear asymptote for log ive(nu,x) for large x.
+        
+            log ive(nu,x)) = log Inu(x) - x   --> (log2pi - logx) / 2
 
-    def __call__(self, x, logx = None):
+        If input flag asymptote = False, the results is refined using also the 
+        next term of the series expansion.
+        
+        Example:
+            > logx=20;nu=255;(np.log(ive(nu,np.exp(logx))),-(log2pi+logx)/2)
+            > (-10.919005546204247, -10.918938533204672)            
+        
+        
+        """
+        lin_asymptote = - (log2pi + logx)/2
+        if asymptote: 
+            return lin_asymptote
+        return np.log1p(-(4*nu**2-1)/(8*np.exp(logx))) + lin_asymptote
+
+
+
+
+    def __call__(self, x, logx = None, exp_scale = False):
         """
         Evaluates log I(nu, x), so that it also works for small values of x.
           - x = 0 is valid
@@ -78,23 +156,72 @@ class LogBesselI:
             logx: make this available if you already have it lying around,
                   it is needed when x is small
                   
+            exp_scale: flag (default=False). computes log ive instead      
+                  
+                  
+        returns: scalar or vector:
+            
+            log I(nu,x),       if not exp_scale          
+            log I(nu,x) - x,   if exp_scale          
+        
+        """
+        if np.isscalar(x):
+            x = np.array([x])
+            if logx is not None:
+                 logx = np.array([logx])
+            return self.__call__(x,logx,exp_scale)[0]
+
+        assert all(x >= 0)
+
+        # try ive for all x
+        y = ive(self.nu,x) 
+        
+        # apply logs when x=0, or y > 0 and not NaN
+        ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
+        with np.errstate(divide='ignore'): # y may be 0 if x ==0
+            y[ok] = np.log(y[ok])       
+        if not exp_scale: y[ok] += x[ok]  # undo scaling done by ive
+        
+        # patch overflow
+        nan = np.isnan(y)  # we assume this signals overflow
+        log_nan =  np.log(x[nan]) if logx is None else logx[nan]
+        y[nan] = self.large_log_ive(log_nan,asymptote=False)
+        if not exp_scale: y[nan] += x[nan]  # undo scaling done by ive
+
+        # patch underflow
+        not_ok = np.logical_not(ok)
+        not_nan = np.logical_not(nan)
+        uf = np.logical_and(not_ok, not_nan)   
+        log_uf =  np.log(x[uf]) if logx is None else logx[uf]
+        y[uf] = self.small_log_iv(log_uf)  
+        if exp_scale: y[uf] -= x[uf]
+
+        return y
+
+
+
+    def log_iv(self, x, logx = None):
+        """
+        Returns log I(nu, x) 
+            
+        See __call__ for more details.
+        
+        inputs:
+            
+            x: scalar or vector, the values should be non-negative
+               if x==0 and nu > 0 -inf is returned quietly
+               if x==0 and nu = 0, 0 is returned
+               
+            logx: make this available if you already have it lying around,
+                  it is needed when x is small, or large
+                  
                   
         returns: scalar or vector log I(nu,x)          
         
         """
-        if np.isscalar(x):
-            assert x >= 0
-            if x == 0: return self.at0
-            return self.__call__(np.array([x]))[0]
-        assert all(x >= 0)
-        y = ive(self.nu,x)  
-        ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
-        uf = np.logical_not(ok)                # underflow if y==0 and x > 0
-        with np.errstate(divide='ignore'):
-            y[ok] = np.log(y[ok]) + x[ok]      # y may be 0 if x ==0 
-        logx =  np.log(x[uf]) if logx is None else logx[uf]
-        y[uf] = self.small(logx)      # fix underflows 
-        return y
+        return self(x, logx, exp_scale = False)
+
+    
 
     def log_ive(self, x, logx = None):
         """
@@ -109,25 +236,32 @@ class LogBesselI:
                if x==0 and nu = 0, 0 is returned
                
             logx: make this available if you already have it lying around,
-                  it is needed when x is small
+                  it is needed when x is small, or large
                   
                   
-        returns: scalar or vector log I(nu,x)          
+        returns: scalar or vector log I(nu,x) - x          
         
         """
-        if np.isscalar(x):
-            assert x >= 0
-            if x == 0: return self.at0
-            return self.log_ive(np.array([x]))[0]
-        assert all(x >= 0)
-        y = ive(self.nu,x)  
-        ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
-        uf = np.logical_not(ok)                # underflow if y==0 and x > 0
-        with np.errstate(divide='ignore'):
-            y[ok] = np.log(y[ok])              # y may be 0 if x ==0 
-        logx =  np.log(x[uf]) if logx is None else logx[uf]
-        y[uf] = self.small(logx) - x[uf]      # fix underflows 
-        return y
+        
+        return self(x, logx, exp_scale = True)
+        # if np.isscalar(x):
+        #     # assert x >= 0
+        #     # if x == 0: return self.at0
+        #     return self.log_ive(np.array([x]))[0]
+
+        # assert all(x >= 0)
+
+        # y = ive(self.nu,x)  
+
+        # ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
+        # uf = np.logical_not(ok)                # underflow if y==0 and x > 0
+        # with np.errstate(divide='ignore'):
+        #     y[ok] = np.log(y[ok])              # y may be 0 if x ==0 
+
+
+        # logx =  np.log(x[uf]) if logx is None else logx[uf]
+        # y[uf] = self.small_log_iv(logx) - x[uf]      # fix underflows 
+        # return y
 
 
     def logCvmf(self,log_kappa):
@@ -172,7 +306,7 @@ class LogBesselI:
 
     def logCvmf_e(self,log_kappa):
         """
-        log normalization constant (numerator) for Von-Mises-Fisher 
+        log normalization constant (numerator) for Von Mises-Fisher 
         distribution, with nu = dim/2-1
         
         
@@ -516,12 +650,12 @@ if __name__ == "__main__":
     
     logBesselI = LogBesselI(nu,5)
     
-    small = logBesselI.small(logk)
+    small = logBesselI.small_log_iv(logk)
     splice = logBesselI(k)
     
     
     with np.errstate(divide='ignore'):
-        ref = logBesselI_ive(nu, k)
+        ref = log_ive_raw(nu, k)
     
     
     plt.figure()
@@ -571,12 +705,12 @@ if __name__ == "__main__":
 
     
 
-    logx = np.linspace(-5,4,200)
-    #x = np.exp(logx)
+    logx = np.linspace(-5,30,200)
+    x = np.exp(logx)
     plt.figure()
     #for dim in [100, 110, 120]:
-    #for dim in [128, 256, 512]:
-    for dim in [2, 3, 4]:
+    for dim in [128, 256, 512]:
+    #for dim in [2, 3, 4]:
         nu = dim/2-1
         #fast = fastLogCvmf_e(nu,tune=nu>0,quiet=False)
         fast = fastLogCvmf_e(nu,tune=nu>0,quiet=False)
@@ -584,6 +718,10 @@ if __name__ == "__main__":
         y = target(logx)
         plt.plot(logx,y,label=f'dim={dim}')
         plt.plot(logx,fast(logx),'--')
+        
+        # y = nu*logx - LogBesselI(nu)(x,exp_scale=True)
+        # plt.plot(logx,y,'r',label='new')
+        
     plt.grid()
     plt.xlabel('log k')
     plt.ylabel('log C_nu(k) + k')
