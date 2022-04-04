@@ -677,8 +677,9 @@ def fast_logrho(nu, quiet = True):
     C1 = fastLogCvmf_e(nu+1, quiet=quiet, err=err1)
     
     
-    def f(logx): 
-        return logx + C(logx=logx) - C1(logx-logx)
+    def f(x=None, logx=None): 
+        x, logx = x_and_logx(x, logx, False, True)
+        return logx + C(logx=logx) - C1(logx=logx)
     
     
     def slow(x=None, logx=None):
@@ -726,15 +727,22 @@ if __name__ == "__main__":
     
     
     logx = np.linspace(-6,14,200)
-    pair = LogBesselIPair(100)(logx=logx)
+    nu = 0
+    pair = LogBesselIPair(nu)(logx=logx)
     rho, drho_dlogx = pair.rho, pair.drho_dlogx
     plt.figure()
-    plt.plot(logx,rho,label='rho')
+    plt.plot(logx,rho,'r',label='rho')
     plt.plot(logx,drho_dlogx,label='dy/dx')
     plt.grid()
     plt.xlabel('log k')
     plt.ylabel('rho')
-    plt.title('nu = 100')
+    plt.title(f'nu = {nu}')
+    
+    fastlogrho = fast_logrho(nu)
+    y = np.exp(fastlogrho(logx=logx))
+    plt.plot(logx,y,'g--',label='rho approx')
+    
+    
     plt.legend()
     plt.show()
     
@@ -759,7 +767,7 @@ if __name__ == "__main__":
 
     
 
-    logx = np.linspace(-5,5,200)
+    logx = np.linspace(-5,21,200)
     x = np.exp(logx)
     plt.figure()
     #for dim in [100, 110, 120]:
