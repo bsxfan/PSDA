@@ -5,7 +5,7 @@ from scipy.optimize import toms748
 
 
 from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
-from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e
+from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, x_and_logx
 
 
 def logfactorial(x):
@@ -50,7 +50,7 @@ class LogNormConst:
         self.logCvmf_e = fastC.slow
 
 
-    def __call__(self, kappa, fast = False, exp_scaling = False):
+    def __call__(self, kappa = None, log_kappa = None, fast = False, exp_scaling = False):
         """
         Returns the log normalization constant, omitting a term dependent
         only on the dimensionality, nu.
@@ -59,27 +59,23 @@ class LogNormConst:
         
         
         """
-        with np.errstate(divide='ignore'): # y may be 0 if x ==0
-            logk = np.log(kappa) 
-        C = self.fastlogCvmf_e(logk) if fast else self.logCvmf_e(logk)
+        kappa, log_kappa = x_and_logx(kappa, log_kappa)
+        C = self.fastlogCvmf_e(kappa, log_kappa) if fast else \
+            self.logCvmf_e(kappa, log_kappa)
         return C if exp_scaling else C + kappa
 
     
-    def rho(self,k):
+    def rho(self, kappa = None, log_kappa = None, fast = False):
         """
         The norm of the expected value for VMF(nu,k). The expected value is 
         monotonic rising, from rho(0) = 0 to rho(inf) = 1. The limit at 0
         is handled explicitly, but the one at infinity is not implemented.
         """
-        if np.isscalar(k):  
-            return self.rho(np.array([k]))[0]
-        nz = k>0
-        r = np.zeros_like(k)
-        if any(nz):
-            knz = k[nz]
-            r[nz] = np.exp(self.logInu1(knz) - self.logInu(knz))
-        return r    
-
+        log_rho = self.fastlogrho(kappa, log_kappa) if fast else \
+                  self.logrho(kappa, log_kappa)
+        return np.exp(log_rho)          
+                  
+                  
     def rhoinv_fast(self,rho):
         """
         Fast, approximate inversion of rho given by Banerjee'05
@@ -104,7 +100,7 @@ class LogNormConst:
             return np.array([self.rhoinv(ri) for ri in rho])
         if rho == 0: return 0.0
         k0 = self.rhoinv_fast(rho)
-        f = lambda x: self.rho(np.exp(x)) - rho
+        f = lambda logx: self.rho(logx = logx) - rho
         left = np.log(k0)
         fleft = f(left)
         if fleft == 0: return k0
