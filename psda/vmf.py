@@ -5,7 +5,7 @@ from scipy.optimize import toms748
 
 
 from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
-from psda.besseli import LogBesselI
+from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e
 
 
 def logfactorial(x):
@@ -16,7 +16,16 @@ def logfactorial(x):
     return gammaln(x+1)
 
 
+class Rho:
+    def __init__(self, nu, logBesselInu = None, fast = False):
+        self.nu = nu
+        self.num = LogBesselI(nu+1)
+        self.den = LogBesselI(nu) if logBesselInu is None else logBesselInu
+        if fast:
+            self.logrho = fast_logrho(nu)
+            
 
+    def logrho()
 
 
 
@@ -42,38 +51,28 @@ class LogNormConst:
     and rhoinv_fast(rho), that does a fast approximation. 
     
     """
-    def __init__(self,dim,n=5):
+    def __init__(self,dim):
         self.nu = nu = dim/2-1
         self.dim = dim
-        self.logInu = LogBesselI(nu,n)
-        self.logInu1 = LogBesselI(nu+1,n)
+        self.fastlogrho = fastlogrho = fast_logrho(nu)
+        self.logrho = fastlogrho.slow
+        self.fastlogCvmf_e = fastC = fastlogrho.C
+        self.logCvmf_e = fastC.slow
 
 
-    def __call__(self, k):
+    def __call__(self, kappa, fast = False, exp_scaling = False):
         """
         Returns the log normalization constant, omitting a term dependent
         only on the dimensionality, nu.
         
-        k > 0: the VMF concentration parameter
+        kappa > 0: the VMF concentration parameter
         
-        The limit at k--> 0 exists, but is not implemented yet 
         
         """
-        nu, logInu = self.nu, self.logInu
-        if np.isscalar(k):        
-            assert k>= 0
-            # min (nu=dim/2-1) = 0, so 1e-20 << sqrt(1+nu), 
-            # but just testing for k==0 works too  
-            if k < 1e-20:     
-                return nu*np.log(2) + gammaln(nu+1)
-            return nu*np.log(k) - logInu(k) 
-        y = np.zeros_like(k)
-        assert all(k >= 0)
-        zeros = k < 1e-20
-        nz = np.logical_not(zeros)
-        y[zeros] = nu*np.log(2) + gammaln(nu+1)
-        y[nz] = nu*np.log(k[nz]) - logInu(k[nz]) 
-        return y
+        with np.errstate(divide='ignore'): # y may be 0 if x ==0
+            logk = np.log(kappa) 
+        C = self.fastlogCvmf_e(logk) if fast else self.logCvmf_e(logk)
+        return C if exp_scaling else C + kappa
 
     
     def rho(self,k):
