@@ -49,16 +49,19 @@ log2pi = np.log(2*np.pi)
 
 def log_ive_raw(nu, x):
     """
+    This wrapper returns:
+        
+        np.log(ive(nu,x))    
+    
     scipy.special.ive underflows for x too small relative to nu. This cannot 
-    be fixed without changing to a logarithmic function return value.   
+    be fixed in ive, without changing to a logarithmic function return value.   
     If ive underflows (returns 0), then the log throws a warning and this
     raw wrapper function returns -inf.
     
     If both nu and x are too large, NaN is returned quietly, 
-    e.g. ive(255,np.exp(21)). I believe this a bug. The function values 
+    e.g. ive(255,np.exp(21)). I believe this a bug. The ive function values 
     for even larger inputs do still have floating point representations.
-    
-    
+        
     This underflow and NaN behaviour is 'patched up' in the class LogBesselI 
     and its methods, which provide logrithmic input and output interfaces where 
     needed. 
@@ -73,7 +76,8 @@ class LogBesselI:
     Callable to implement log I_nu(x), for nu >=0 and x >= 0.
     
     Unlike scipy.special.ive, this callable will not underflow if x is small
-    relative to nu.
+    relative to nu and it catches NaNs and recomputes the value using 2 terms
+    of a series expansion for large arguments.
     
     The degree, nu is stored in the callable, while x is supplied to the call,
     e.g.:
@@ -102,6 +106,8 @@ class LogBesselI:
         self.exponent = (2*m+nu).reshape(-1,1)
         self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
         self.at0 = 0.0 if nu==0 else -np.inf
+        
+        
 
     def small_log_iv(self,logx):
         """
@@ -111,7 +117,7 @@ class LogBesselI:
             
         for smallish x > 0. At a fixed number of terms, accuracy depends on nu. 
         We use this series expansion only if ive underflows, effecting an  
-        automatically decision when to invoke this expansion. We found log(ive) 
+        automatic decision when to invoke this expansion. We found log(ive) 
         to be accurate up to the point (going to smaller x) where underflow 
         still does not happen. 
         
@@ -127,12 +133,25 @@ class LogBesselI:
             log ive(nu,x)) = log Inu(x) - x   --> (log2pi - logx) / 2
 
         If input flag asymptote = False, the results is refined using also the 
-        next term of the series expansion.
+        next term of a series expansion for large arguments.
         
         Example:
-            > logx=20;nu=255;(np.log(ive(nu,np.exp(logx))),-(log2pi+logx)/2)
-            > (-10.919005546204247, -10.918938533204672)            
+
+            nu = 255
+            logI = LogBesselI(nu)
+            for logx in (20,21):
+                raw = log_ive_raw(nu, np.exp(logx))
+                s1 = logI.large_log_ive(logx,asymptote=True)
+                s2 = logI.large_log_ive(logx,asymptote=False)
+                print(f"logx={logx}: {raw:.5f}, {s2:.5f}, {s1:.5f}")
         
+            > logx=20: -10.91901, -10.91901, -10.91894
+            > logx=21:       nan, -11.41896, -11.41894
+
+
+        We use this call to patch up log(ive) in cases where ive returns NaN.
+        (We assume this happens only for large x. If this is not the case, 
+         the log1p below can also NaN if x is too small relative to nu.) 
         
         """
         lin_asymptote = - (log2pi + logx)/2
@@ -163,9 +182,10 @@ class LogBesselI:
                if x==0 and nu = 0, 0 is returned
                
             logx: make this available if you already have it lying around,
-                  it is needed when x is small
+                  it is needed when x is small, or large
                   
-            exp_scale: flag (default=False). computes log ive instead      
+            exp_scale: flag default=False: log Bessel-I is returned. 
+                            If true: log ive is returned instead.      
                   
                   
         returns: scalar or vector:
@@ -211,7 +231,8 @@ class LogBesselI:
 
     def log_iv(self, x, logx = None):
         """
-        Returns log I(nu, x) 
+        Returns log I(nu, x). This is the same as __call__ with the default
+        flag.
             
         See __call__ for more details.
         
@@ -238,7 +259,8 @@ class LogBesselI:
             
             log [I(nu, x) exp(-x)] = log I(nu,x) - x. 
             
-        See __call__ for more details.
+        This inokes __call__ with exp_scaling=True. See __call__ for more 
+        details.
         
         inputs:
             
@@ -474,19 +496,24 @@ def softplus(x):
 def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
     """
-    This works very well for large nu and worst for nu=0 (VMF dim = 2). 
+    This works: 
+        very well for large nu, 
+        ok for smaller nu 
+        and worst for nu=0 (VMF dim = 2). 
     
     It tunes a pre-and-post-scaled-and-shifted softplus approximation to the
     function:
     
          log Cvmf_e(log kappa). 
          
-    The approximation always obays the left limit and the right 
-    linear asymptote.
+    The approximation is constrained to always obays the left limit and the 
+    right linear asymptote of logCvmf_e.
     
     
     The true functions for small nu are less smooth than our approximations,
-    espically for n=0, which has an extra bulge below the softplus elbow.
+    espically for nu=0, which has an extra bulge below the softplus elbow.
+    For large nu, the trur function is very smooth and well-approximated by
+    the softplus approximation.
     
     
     inputs: 
@@ -508,7 +535,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
                 
                 f.nu 
                 f.params = (a,b,c,d), the scaling and shifting constants
-                f.slow, function handle the slower reference implementation
+                f.slow, function handle for the slower reference implementation
     
     """
     
@@ -589,9 +616,13 @@ def fast_logrho(nu, quiet = True):
     
 
 
-    Note: An altenative is to tune exp(softplus-approx) to fit rho. The 
-          approximation is a sigmoid. rho(log_kappa) is close to a sigmoid, but
-          is somewhat less smooth, especially for small nu.
+    Note: An altenative is to tune 
+    
+             exp(affine->softplus->affine) 
+          
+          to fit rho. This approximation gives a sigmoid. The true 
+          rho(log_kappa) is close to a sigmoid, but is somewhat less smooth, 
+          especially for small nu.
 
 
 
@@ -694,7 +725,7 @@ if __name__ == "__main__":
 
     
 
-    logx = np.linspace(-5,30,200)
+    logx = np.linspace(-5,5,200)
     x = np.exp(logx)
     plt.figure()
     #for dim in [100, 110, 120]:
@@ -718,7 +749,14 @@ if __name__ == "__main__":
     plt.show()
     
         
-        
+    print("\n\n")
+    nu = 255
+    logI = LogBesselI(nu)
+    for logx in (20,21):
+        raw = log_ive_raw(nu, np.exp(logx))
+        s1 = logI.large_log_ive(logx,asymptote=True)
+        s2 = logI.large_log_ive(logx,asymptote=False)
+        print(f"logx={logx}: {raw:.5f}, {s2:.5f}, {s1:.5f}")
         
         
         
