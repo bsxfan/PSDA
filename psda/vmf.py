@@ -1,10 +1,12 @@
 import numpy as np
 
-from scipy.special import ive, gammaln, logsumexp
+from scipy.special import gammaln
 from scipy.optimize import toms748
 
 
 from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
+from psda.besseli import LogBesselI
+
 
 def logfactorial(x):
     """
@@ -15,67 +17,6 @@ def logfactorial(x):
 
 
 
-class LogBesselI:
-    """
-    We use scipy for larger arguments and a logsumexp over a small
-    series expansion for small arguments. The scipy implementation is OK
-    for large arguments, because we use the exponentially scaled (ive)
-    variant.
-
-    For later, if we need derivatives:
-    See: https://functions.wolfram.com/Bessel-TypeFunctions/BesselI/20/ShowAll.html
-    
-    d/dx I(nu,x) = I(n-1, z) - (nu/x)I(nu,x)
-                 = (nu/x)I(nu,x) + I(nu+1,x)
-                 = (I(nu-1,x) + I(nu+1,x)) / 2
-
-    """
-    def __init__(self, nu, n=5):
-        self.nu = nu
-        self.n = n
-        m = np.arange(n)
-        self.exp = (2*m+nu).reshape(-1,1)
-        self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
-        self.thr = np.sqrt(self.nu+1)
-        
-    def switchover(self):
-        x = self.thr
-        return x, self.small(x), self.large(x)
-     
-        
-        
-    def __call__(self,x):
-        y = self.splice(x)
-        return y
-        
-    
-    def splice(self,x):
-        if np.isscalar(x):
-            return self.__call__(np.array([x]))[0]
-        zeros = x==0
-        small = np.logical_and(x < self.thr, x > 0)         
-        large = np.logical_not(small)
-        y = np.zeros_like(x)
-        y[zeros] = self.nu == 0
-        y[small] = self.small(x[small])
-        y[large] = self.large(x[large])
-        return y
-    
-    
-    
-    def small(self,x):
-        """
-        short series expansion for log Inu(x) for 0 < x, smallish 
-        """
-        num = self.exp*np.log(x/2)
-        return logsumexp(num-self.den,axis=0)
-
-
-    def large(self,x):
-        """
-        log Inu(x), for x not too small (log 0 warning if x too small)
-        """
-        return np.log(ive(self.nu,x)) + x
 
 
 
