@@ -50,6 +50,9 @@ log2pi = np.log(2*np.pi)
 
 
 def x_and_logx(x = None, logx = None, compute_x = True, compute_logx = True):
+    """
+    Convenience method for used by all functions that take x and/or logx.
+    """
     assert x is not None or logx is not None, "at least one of x or logx is required"
     if compute_x and x is None:
         x = np.exp(logx)
@@ -79,6 +82,11 @@ def log_ive_raw(nu, x = None, logx = None):
     This underflow and NaN behaviour is 'patched up' in the class LogBesselI 
     and its methods, which provide logrithmic input and output interfaces where 
     needed. 
+    
+    
+    inputs: x and/or logx. 
+            Only x is used, but it will be computed from logx if not given.
+    
     
     """
     x, logx = x_and_logx(x, logx, True, False)
@@ -136,6 +144,11 @@ class LogBesselI:
         automatic decision when to invoke this expansion. We found log(ive) 
         to be accurate up to the point (going to smaller x) where underflow 
         still does not happen. 
+
+        inputs: x and/or logx. 
+                Only logx is used, but it will be computed from x if not given.
+
+
         
         """
         x, logx = x_and_logx(x, logx, False, True)
@@ -170,6 +183,13 @@ class LogBesselI:
         (We assume this happens only for large x. If this is not the case, 
          the log1p below can also NaN if x is too small relative to nu.) 
         
+
+        inputs: x and/or logx. 
+                For asymptote=True, only x is used.
+                For asymptote=False, both are used.
+
+
+
         """
         x, logx = x_and_logx(x, logx, not asymptote, True)
         lin_asymptote = - (log2pi + logx)/2
@@ -195,15 +215,17 @@ class LogBesselI:
         
         inputs:
             
-            x: scalar or vector, the values should be non-negative
-               if x==0 and nu > 0 -inf is returned quietly
-               if x==0 and nu = 0, 0 is returned
+            x and/ or logx: scalars or vectors
                
-            logx: make this available if you already have it lying around,
-                  it is needed when x is small, or large
+               Both x and lox are used.
+               
+               The x-values should be non-negative:
+                 if x==0 and nu > 0 -inf is returned quietly
+                 if x==0 and nu = 0, 0 is returned
+               
                   
             exp_scale: flag default=False: log Bessel-I is returned. 
-                            If true: log ive is returned instead.      
+                                  If true: log ive is returned instead.      
                   
                   
         returns: scalar or vector:
@@ -258,12 +280,9 @@ class LogBesselI:
         
         inputs:
             
-            x: scalar or vector, the values should be non-negative
-               if x==0 and nu > 0 -inf is returned quietly
-               if x==0 and nu = 0, 0 is returned
+            x and/ or logx: scalars or vectors
                
-            logx: make this available if you already have it lying around,
-                  it is needed when x is small, or large
+               Both x and lox are used.
                   
                   
         returns: scalar or vector log I(nu,x)          
@@ -284,12 +303,9 @@ class LogBesselI:
         
         inputs:
             
-            x: scalar or vector, the values should be non-negative
-               if x==0 and nu > 0 -inf is returned quietly
-               if x==0 and nu = 0, 0 is returned
+            x and/ or logx: scalars or vectors
                
-            logx: make this available if you already have it lying around,
-                  it is needed when x is small, or large
+               Both x and lox are used. Supply both if you have them.
                   
                   
         returns: scalar or vector log I(nu,x) - x          
@@ -313,6 +329,8 @@ class LogBesselI:
         
         
         input: x, and/or logx, where x >= 0 is the concentration
+        
+               Both x and logx are used. Supply both if you have both.
         
         returns: function value(s) 
                  
@@ -353,7 +371,9 @@ class LogBesselI:
             
         
         
-        input: log_kappa, where kappa >= 0 is the concentration
+        input: x, and/or logx, where x >= 0 is the concentration
+        
+               Both x and logx are used. Supply both if you have both.
         
         returns: function value(s) 
                  
@@ -397,7 +417,7 @@ class LogBesselIPair:
         
     def __call__(self, x=None, logx=None):
         """
-        input: x and/or logx
+        input: x and/or logx. Both are used, so supply both if you have them.
 
         returns: an IPair, from which function values and derivatives
                  can be obtained as properties.         
@@ -510,6 +530,10 @@ class IPair:
 
 
 def softplus(x): 
+    """
+    This is just one way to define a numericallly stable softplus. 
+    It implements log(1+exp(x)), but will not overflow for large x.
+    """
     return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)
 
     
@@ -636,13 +660,15 @@ def fast_logrho(nu, quiet = True):
         
             f: a function handle for the fast approximation, which maps:
                 
-                log(kappa)  -->  logrho
+                x and/or logx to log rho(x). 
+                
+                   The approximation uses only logx.
                 
             Extra info is returned in attached fields:    
                 f.nu 
                 f.C = function handle for fast logCvmf_e(nu)
                 f.C1, function handle for fast logCvmf_e(nu+1)
-                f.slow function handle to reference logrho
+                f.slow function handle to reference log rho
     
 
 
@@ -727,7 +753,7 @@ if __name__ == "__main__":
     
     
     logx = np.linspace(-6,14,200)
-    nu = 0
+    nu = 127
     pair = LogBesselIPair(nu)(logx=logx)
     rho, drho_dlogx = pair.rho, pair.drho_dlogx
     plt.figure()

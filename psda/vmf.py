@@ -16,16 +16,6 @@ def logfactorial(x):
     return gammaln(x+1)
 
 
-class Rho:
-    def __init__(self, nu, logBesselInu = None, fast = False):
-        self.nu = nu
-        self.num = LogBesselI(nu+1)
-        self.den = LogBesselI(nu) if logBesselInu is None else logBesselInu
-        if fast:
-            self.logrho = fast_logrho(nu)
-            
-
-    def logrho()
 
 
 
