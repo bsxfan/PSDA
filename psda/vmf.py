@@ -1,6 +1,6 @@
 import numpy as np
 
-from scipy.special import gammaln
+#from scipy.special import gammaln
 from scipy.optimize import toms748
 
 
@@ -8,12 +8,12 @@ from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_unifo
 from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, k_and_logk
 
 
-def logfactorial(x):
-    """
-    Natural log of factorial. Invokes scipy.special.gammaln.
-    log x! = log gamma(x+1)
-    """
-    return gammaln(x+1)
+# def logfactorial(x):
+#     """
+#     Natural log of factorial. Invokes scipy.special.gammaln.
+#     log x! = log gamma(x+1)
+#     """
+#     return gammaln(x+1)
 
 
 
@@ -94,10 +94,15 @@ class LogNormConst:
         return k    
     
     
-    def rhoinv(self,rho):
+    def rhoinv(self, rho, fast=False):
         """
         Slower, more accurate inversion of rho using a root finder.
+        Except, if fast = True, it just calls rhoinv_fast.
         """
+        
+        # probably more accurate than iverting the fast rho approximation
+        if fast: return self.rhoinv_fast(rho) 
+        
         if not np.isscalar(rho):
             return np.array([self.rhoinv(ri) for ri in rho])
         if rho == 0: return 0.0
