@@ -5,7 +5,7 @@ from scipy.optimize import toms748
 
 
 from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
-from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, x_and_logx
+from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, k_and_logk
 
 
 def logfactorial(x):
@@ -50,7 +50,7 @@ class LogNormConst:
         self.logCvmf_e = fastC.slow
 
 
-    def __call__(self, kappa = None, log_kappa = None, fast = False, exp_scaling = False):
+    def __call__(self, k = None, logk = None, fast = False, exp_scaling = False):
         """
         Returns the log normalization constant, omitting a term dependent
         only on the dimensionality, nu.
@@ -59,20 +59,20 @@ class LogNormConst:
         
         
         """
-        kappa, log_kappa = x_and_logx(kappa, log_kappa)
-        C = self.fastlogCvmf_e(kappa, log_kappa) if fast else \
-            self.logCvmf_e(kappa, log_kappa)
-        return C if exp_scaling else C + kappa
+        k, logk = k_and_logk(k, logk)
+        C = self.fastlogCvmf_e(k, logk) if fast else \
+            self.logCvmf_e(k, logk)
+        return C if exp_scaling else C + k
 
     
-    def rho(self, kappa = None, log_kappa = None, fast = False):
+    def rho(self, k = None, logk = None, fast = False):
         """
         The norm of the expected value for VMF(nu,k). The expected value is 
         monotonic rising, from rho(0) = 0 to rho(inf) = 1. The limit at 0
         is handled explicitly, but the one at infinity is not implemented.
         """
-        log_rho = self.fastlogrho(kappa, log_kappa) if fast else \
-                  self.logrho(kappa, log_kappa)
+        log_rho = self.fastlogrho(k, logk) if fast else \
+                  self.logrho(k, logk)
         return np.exp(log_rho)          
                   
                   
@@ -100,7 +100,7 @@ class LogNormConst:
             return np.array([self.rhoinv(ri) for ri in rho])
         if rho == 0: return 0.0
         k0 = self.rhoinv_fast(rho)
-        f = lambda logx: self.rho(logx = logx) - rho
+        f = lambda logk: self.rho(logk = logk) - rho
         left = np.log(k0)
         fleft = f(left)
         if fleft == 0: return k0
