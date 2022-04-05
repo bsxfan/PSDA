@@ -1,12 +1,10 @@
 import numpy as np
 
-from scipy.special import gammaln
+from scipy.special import ive, gammaln, logsumexp
 from scipy.optimize import toms748
 
 
-from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
-from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, k_and_logk
-
+from oldpsda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
 
 def logfactorial(x):
     """
@@ -16,6 +14,68 @@ def logfactorial(x):
     return gammaln(x+1)
 
 
+
+class LogBesselI:
+    """
+    We use scipy for larger arguments and a logsumexp over a small
+    series expansion for small arguments. The scipy implementation is OK
+    for large arguments, because we use the exponentially scaled (ive)
+    variant.
+
+    For later, if we need derivatives:
+    See: https://functions.wolfram.com/Bessel-TypeFunctions/BesselI/20/ShowAll.html
+    
+    d/dx I(nu,x) = I(n-1, z) - (nu/x)I(nu,x)
+                 = (nu/x)I(nu,x) + I(nu+1,x)
+                 = (I(nu-1,x) + I(nu+1,x)) / 2
+
+    """
+    def __init__(self, nu, n=5):
+        self.nu = nu
+        self.n = n
+        m = np.arange(n)
+        self.exp = (2*m+nu).reshape(-1,1)
+        self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
+        self.thr = np.sqrt(self.nu+1)
+        
+    def switchover(self):
+        x = self.thr
+        return x, self.small(x), self.large(x)
+     
+        
+        
+    def __call__(self,x):
+        y = self.splice(x)
+        return y
+        
+    
+    def splice(self,x):
+        if np.isscalar(x):
+            return self.__call__(np.array([x]))[0]
+        zeros = x==0
+        small = np.logical_and(x < self.thr, x > 0)         
+        large = np.logical_not(small)
+        y = np.zeros_like(x)
+        y[zeros] = self.nu == 0
+        y[small] = self.small(x[small])
+        y[large] = self.large(x[large])
+        return y
+    
+    
+    
+    def small(self,x):
+        """
+        short series expansion for log Inu(x) for 0 < x, smallish 
+        """
+        num = self.exp*np.log(x/2)
+        return logsumexp(num-self.den,axis=0)
+
+
+    def large(self,x):
+        """
+        log Inu(x), for x not too small (log 0 warning if x too small)
+        """
+        return np.log(ive(self.nu,x)) + x
 
 
 
@@ -41,43 +101,55 @@ class LogNormConst:
     and rhoinv_fast(rho), that does a fast approximation. 
     
     """
-    def __init__(self,dim):
-        self.dim = dim
+    def __init__(self,dim,n=5):
         self.nu = nu = dim/2-1
-        self.logI = logI = LogBesselI(nu)
-        self.logCvmf_e = logI.logCvmf_e
-        self.fastlogCvmf_e = fastLogCe = fastLogCvmf_e(logI)
-        self.fastlogrho = fastlogrho = fast_logrho(logI, fastLogCe)
-        self.logrho = fastlogrho.slow
+        self.dim = dim
+        self.logInu = LogBesselI(nu,n)
+        self.logInu1 = LogBesselI(nu+1,n)
 
 
-    def __call__(self, k = None, logk = None, fast = False, exp_scale = False):
+    def __call__(self, k):
         """
         Returns the log normalization constant, omitting a term dependent
         only on the dimensionality, nu.
         
-        kappa > 0: the VMF concentration parameter
+        k > 0: the VMF concentration parameter
         
+        The limit at k--> 0 exists, but is not implemented yet 
         
         """
-        k, logk = k_and_logk(k, logk)
-        logCe = self.fastlogCvmf_e(k, logk) if fast else \
-                self.logCvmf_e(k, logk)
-        if exp_scale: return logCe
-        return logCe - k
+        nu, logInu = self.nu, self.logInu
+        if np.isscalar(k):        
+            assert k>= 0
+            # min (nu=dim/2-1) = 0, so 1e-20 << sqrt(1+nu), 
+            # but just testing for k==0 works too  
+            if k < 1e-20:     
+                return nu*np.log(2) + gammaln(nu+1)
+            return nu*np.log(k) - logInu(k) 
+        y = np.zeros_like(k)
+        assert all(k >= 0)
+        zeros = k < 1e-20
+        nz = np.logical_not(zeros)
+        y[zeros] = nu*np.log(2) + gammaln(nu+1)
+        y[nz] = nu*np.log(k[nz]) - logInu(k[nz]) 
+        return y
 
     
-    def rho(self, k = None, logk = None, fast = False):
+    def rho(self,k):
         """
         The norm of the expected value for VMF(nu,k). The expected value is 
         monotonic rising, from rho(0) = 0 to rho(inf) = 1. The limit at 0
         is handled explicitly, but the one at infinity is not implemented.
         """
-        log_rho = self.fastlogrho(k, logk) if fast else \
-                  self.logrho(k, logk)
-        return np.exp(log_rho)          
-                  
-                  
+        if np.isscalar(k):  
+            return self.rho(np.array([k]))[0]
+        nz = k>0
+        r = np.zeros_like(k)
+        if any(nz):
+            knz = k[nz]
+            r[nz] = np.exp(self.logInu1(knz) - self.logInu(knz))
+        return r    
+
     def rhoinv_fast(self,rho):
         """
         Fast, approximate inversion of rho given by Banerjee'05
@@ -102,7 +174,7 @@ class LogNormConst:
             return np.array([self.rhoinv(ri) for ri in rho])
         if rho == 0: return 0.0
         k0 = self.rhoinv_fast(rho)
-        f = lambda logk: self.rho(logk = logk) - rho
+        f = lambda x: self.rho(np.exp(x)) - rho
         left = np.log(k0)
         fleft = f(left)
         if fleft == 0: return k0

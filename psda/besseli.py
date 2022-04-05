@@ -319,7 +319,7 @@ class LogBesselI:
         return self(k, logk, exp_scale = True)
 
 
-    def logCvmf(self, k = None, logk = None, exp_scaling = False):
+    def logCvmf(self, k = None, logk = None, exp_scale = False):
         """
         log normalization constant (numerator) for Von-Mises-Fisher 
         distribution, with nu = dim/2-1
@@ -356,7 +356,7 @@ class LogBesselI:
         k, logk = k_and_logk(k, logk)
         if np.isscalar(k) and k == 0:
             return nu*log2 + gammaln(nu+1)  # irrespective of exp_scaling
-        logI = self(k, logk, exp_scaling)
+        logI = self(k, logk, exp_scale)
         y = nu*logk - logI
         return y
     
@@ -384,7 +384,7 @@ class LogBesselI:
                  The output has the same shape as the input.
         """
         
-        return self.logCvmf(k, logk, exp_scaling=True)
+        return self.logCvmf(k, logk, exp_scale=True)
         
 
 
@@ -542,7 +542,8 @@ def softplus(x):
 
     
 
-def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
+def fastLogCvmf_e(logI: LogBesselI, 
+                  d=np.pi, tune = True, quiet = True, err = None):
     
     """
     This works: 
@@ -567,7 +568,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
     inputs: 
         
-        nu >=0, the Bessel-I order  (nu=dim/2-1 for VMF distribution)
+        logI: LogBesselI: this contains nu = dim/2-1  
         
         d>0: (default = pi) the tunable softplus input scaling factor
         
@@ -588,6 +589,8 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
     """
     
+    nu = logI.nu
+    slow = logI.logCvmf_e
     
     left = nu*log2 + gammaln(nu+1)     # left flat asymptote
     right_offs = log2pi/2              # offset for right linear asymptote
@@ -608,7 +611,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
         return approx(logk)
     
     f.nu = nu
-    f.slow = slow = LogBesselI(nu).logCvmf_e
+    f.slow = slow
     if not tune: 
         f.params = (a,b,c,d)
         return f
@@ -644,7 +647,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
 
 
-def fast_logrho(nu, quiet = True):
+def fast_logrho(logI: LogBesselI, fastLogCe = None, quiet = True):
     """
     This works ok for nu=0 and well for nu>0
     
@@ -654,7 +657,7 @@ def fast_logrho(nu, quiet = True):
     
     inputs: 
         
-        nu >=0, the Bessel-I order  (nu=dim/2-1 for VMF distribution)
+        logI: LogBesselI: this contains nu = dim/2-1  
         
         quiet: boolean (default True), print tuning progress if False
     
@@ -687,13 +690,15 @@ def fast_logrho(nu, quiet = True):
 
 
     """
+    nu = logI.nu
+    logI1 = LogBesselI(nu+1)
+    Cslow = logI.logCvmf_e
+    Cslow1 = logI1.logCvmf_e
     
-    
-    C = fastLogCvmf_e(nu,tune=nu>0,quiet=quiet)
-    C1slow = LogBesselI(nu+1).logCvmf_e
+    C = fastLogCe or fastLogCvmf_e(logI, tune=nu>0, quiet=quiet)
     
     def teacher(logk):
-        return logk + C.slow(logk=logk) - C1slow(logk=logk)
+        return logk + Cslow(logk=logk) - Cslow1(logk=logk)
 
     
     def student1(logk,c1):
@@ -704,24 +709,25 @@ def fast_logrho(nu, quiet = True):
         return (np.exp(teacher(logk))-np.exp(student1(logk,c1)))**2
     
     
-    C1 = fastLogCvmf_e(nu+1, quiet=quiet, err=err1)
+    C1 = fastLogCvmf_e(logI1, quiet=quiet, err=err1)
     
     
-    def f(k=None, logk=None): 
+    # fast log rho
+    def fast(k=None, logk=None): 
         k, logk = k_and_logk(k, logk, False, True)
         return logk + C(logk=logk) - C1(logk=logk)
     
-    
+    # slow log rho
     def slow(k=None, logk=None):
         k, logk = k_and_logk(k, logk, False, True)
         return teacher(logk)
     
-    f.slow = slow
-    f.nu = nu
-    f.C = C
-    f.C1 = C1
+    fast.slow = slow
+    fast.nu = nu
+    fast.C = C
+    fast.C1 = C1
 
-    return f    
+    return fast    
     
 
 
@@ -768,7 +774,7 @@ if __name__ == "__main__":
     plt.ylabel('rho')
     plt.title(f'nu = {nu}')
     
-    fastlogrho = fast_logrho(nu)
+    fastlogrho = fast_logrho(LogBesselI(nu))
     y = np.exp(fastlogrho(logk=logk))
     plt.plot(logk,y,'g--',label='rho approx')
     
@@ -782,14 +788,15 @@ if __name__ == "__main__":
     plt.figure()
     for dim in [128, 256, 512]:
         nu = dim/2-1
-        bi = LogBesselI(nu)
-        y = bi.logCvmf_e(logk=logk)
+        logI = LogBesselI(nu)
+        y = logI.logCvmf_e(logk=logk)
         plt.plot(logk,y,label=f'dim={dim}')
         y = (nu+0.5)*logk + log2pi/2
         plt.plot(logk,y,'--')
     plt.grid()
     plt.xlabel('log k')
     plt.ylabel('log C_nu(k) + k')
+    plt.title('asymptotes')
     plt.legend()
     plt.show()
     
@@ -804,7 +811,7 @@ if __name__ == "__main__":
     for dim in [128, 256, 512]:
     #for dim in [2, 3, 4]:
         nu = dim/2-1
-        fast = fastLogCvmf_e(nu,tune=nu>0,quiet=False)
+        fast = fastLogCvmf_e(LogBesselI(nu), tune=nu>0, quiet=False)
         target = fast.slow
         y = target(x,logk)
         plt.plot(logk,y,label=f'dim={dim}')
