@@ -157,7 +157,8 @@ class PSDA:
             marginal log-likelihood (em objective)
         """
         zpost = self.zposterior(compose(counts,means))
-        llh = self.logCw*total + self.logCb - zpost.logCk.sum() 
+        ns = len(counts)
+        llh = self.logCw*total + ns*self.logCb - zpost.logCk.sum() 
     
         z_exp = zpost.mean()
         zbar = z_exp.mean(axis=0)
