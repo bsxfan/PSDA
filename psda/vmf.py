@@ -280,13 +280,16 @@ class VMF:
         return decompose(X)[1]
     
     
-    def sample(self, n_or_labels):
+    def sample(self, n_or_labels = None):
         """
         Generate samples from the von Mises-Fisher distribution.
-        If self contains a single distribution, supply n, the number of
-        required samples.
-        If self contains multiple distributions, supply labels (n, ) to select
-        for each sample the distribution to be sampled from.
+        - If self contains a single distribution, supply n, the number of
+          required samples.
+        - If self contains multiple distributions, supply labels (n, ) to select
+          for each sample the distribution to be sampled from.
+        - If neither n nor labels is given, one sample from each distribution
+          is returned.
+        
         Reference:
         o Stochastic Sampling of the Hyperspherical von Mises–Fisher Distribution
           Without Rejection Methods - Kurz & Hanebeck, 2015
@@ -294,6 +297,14 @@ class VMF:
         """
 
         dim, mu = self.dim, self.mu
+        if n_or_labels is None:
+            if mu.ndim==1:
+                return self.sample(1)
+            else:
+                n = mu.shape[0]
+                return self.sample(np.arange(n))
+        
+        
 
         if np.isscalar(n_or_labels):   # n iid samples from a single distribution
             n = n_or_labels
@@ -305,8 +316,8 @@ class VMF:
             X = rotate_to_mu(X,mu)
 
         else:                          # index distribution by labels 
-            labels = n_or_labels
             assert mu.ndim == 2
+            labels = n_or_labels 
             if np.isscalar(self.k):    # broadcast k
                 kk = np.full((len(labels),),self.k)
             else:
