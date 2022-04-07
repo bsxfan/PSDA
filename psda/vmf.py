@@ -58,14 +58,12 @@ class LogNormConst:
 
         kappa > 0: the VMF concentration parameter
 
-
         """
         k, logk = k_and_logk(k, logk)
         logCe = self.fastlogCvmf_e(k, logk) if fast else \
                 self.logCvmf_e(k, logk)
         if exp_scale: return logCe
         return logCe - k
-
 
     def rho(self, k = None, logk = None, fast = False):
         """
@@ -75,8 +73,8 @@ class LogNormConst:
         """
         log_rho = self.fastlogrho(k, logk) if fast else \
                   self.logrho(k, logk)
-        return np.exp(log_rho)
 
+        return np.exp(log_rho)
 
     def rhoinv_fast(self,rho):
         """
@@ -91,8 +89,8 @@ class LogNormConst:
             rhonz = rho[nz]
             rho2 = rhonz**2
             k[nz] = rhonz*(dim-rho2) / (1-rho2)
-        return k
 
+        return k
 
     def rhoinv(self, rho, fast=False):
         """
@@ -139,9 +137,11 @@ def decompose(x):
         return norm, x/norm
     norm = np.sqrt((x**2).sum(axis=-1,keepdims=True))
     zeros = norm == 0
+
     if np.any(zeros):
         norm[zeros] = 1
     return norm.squeeze(), x/norm
+
 
 def compose(norm,mu):
     """
@@ -153,6 +153,7 @@ def compose(norm,mu):
     """
     if not np.isscalar(norm): norm = norm.reshape(*(*mu.shape[:-1],1))
     return norm*mu
+
 
 class VMF:
     """
@@ -218,6 +219,10 @@ class VMF:
     def uniform(cls, dim):
         return cls(dim)
 
+
+    @classmethod
+    def uniform(cls, dim):
+        return cls(dim)
 
     @classmethod
     def max_likelihood(cls, mean, logC = None):

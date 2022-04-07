@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from psda.psda import VMF, PSDA, decompose, atleast2
 from pyllr import quick_eval
 
-dim = 256
-b, w = 30, 800  # within, between concentrations 
+dim = 100
+b, w = 50, 100  # within, between concentrations 
 
 ns = 500  # number of training speakers
 n = 10000  # numer of training examples
@@ -161,4 +161,20 @@ print(f"  EER:     {eer_p12*100:.1f}%")
 print(f"  Cllr:    {cllr_p12:.3f}")
 print(f"  minCllr: {mincllr_p12:.3f}")
 
+
+plt.figure()
+plt.hist(non,100,label='non')
+plt.hist(tar,100,label='tar',alpha=0.5)
+plt.title(f'PSDA LLR, EER={eer_p*100:.1f}%')
+plt.grid()
+plt.legend()
+plt.show()
+
+plt.figure()
+plt.hist(nonc,100,label='non')
+plt.hist(tarc,100,label='tar',alpha=0.5)
+plt.title(f'cosine, EER={eer_c*100:.1f}%')
+plt.grid()
+plt.legend()
+plt.show()
 
