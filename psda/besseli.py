@@ -49,33 +49,36 @@ log2pi = np.log(2*np.pi)
 
 
 
-def x_and_logx(x = None, logx = None, compute_x = True, compute_logx = True):
+def k_and_logk(k = None, logk = None, compute_k = True, compute_logk = True):
     """
-    Convenience method for used by all functions that take x and/or logx.
+    Convenience method used by all functions that have inputs in the style:
+        
+        k and/or logk
+        
     """
-    assert x is not None or logx is not None, "at least one of x or logx is required"
-    if compute_x and x is None:
-        x = np.exp(logx)
-    if compute_logx and logx is None:    
+    assert k is not None or logk is not None, "at least one of k or logk is required"
+    if compute_k and k is None:
+        k = np.exp(logk)
+    if compute_logk and logk is None:    
         with np.errstate(divide='ignore'):
-            logx = np.log(x)
-    return x, logx        
+            logk = np.log(k)
+    return k, logk        
 
 
 
 
-def log_ive_raw(nu, x = None, logx = None):
+def log_ive_raw(nu, k = None, logk = None):
     """
     This wrapper returns:
         
-        np.log(ive(nu,x))    
+        np.log(ive(nu,k))    
     
-    scipy.special.ive underflows for x too small relative to nu. This cannot 
+    scipy.special.ive underflows for k too small relative to nu. This cannot 
     be fixed in ive, without changing to a logarithmic function return value.   
     If ive underflows (returns 0), then the log throws a warning and this
     raw wrapper function returns -inf.
     
-    If both nu and x are too large, NaN is returned quietly, 
+    If both nu and k are too large, NaN is returned quietly, 
     e.g. ive(255,np.exp(21)). I believe this a bug. The ive function values 
     for even larger inputs do still have floating point representations.
         
@@ -84,22 +87,22 @@ def log_ive_raw(nu, x = None, logx = None):
     needed. 
     
     
-    inputs: x and/or logx. 
-            Only x is used, but it will be computed from logx if not given.
+    inputs: k and/or logk. 
+            Only k is used, but it will be computed from logk if not given.
     
     
     """
-    x, logx = x_and_logx(x, logx, True, False)
+    k, logk = k_and_logk(k, logk, True, False)
     
-    return np.log(ive(nu,x))
+    return np.log(ive(nu,k))
 
 
 
 class LogBesselI:
     """
-    Callable to implement log I_nu(x), for nu >=0 and x >= 0.
+    Callable to implement log I_nu(k), for nu >=0 and k >= 0.
     
-    Unlike scipy.special.ive, this callable will not underflow if x is small
+    Unlike scipy.special.ive, this callable will not underflow if k is small
     relative to nu and it catches NaNs and recomputes the value using 2 terms
     of a series expansion for large arguments.
     
@@ -107,16 +110,16 @@ class LogBesselI:
     e.g.:
     
         logI =  LogBesselI(nu)
-        y1 = logI(x1)
-        y2 = logI(x2)
+        y1 = logI(k1)
+        y2 = logI(k2)
     
-    I_nu(x) >= 0, so log is -inf or real 
-    I_nu(x) (and its log) is monotonic rising
+    I_nu(k) >= 0, so log is -inf or real 
+    I_nu(k) (and its log) is monotonic rising
     
     log I_0(0) = 0, 
     log I_nu(0) = -inf (no warning), for nu > 0
     
-    For large x, I_nu(x) --> exp(x) / sqrt(2 pi x)
+    For large k, I_nu(k) --> exp(k) / sqrt(2 pi k)
     
     
     """
@@ -133,34 +136,34 @@ class LogBesselI:
         
         
 
-    def small_log_iv(self, x=None, logx=None):
+    def small_log_iv(self, k=None, logk=None):
         """
         Short series expansion for: 
             
-            log iv(nu,x)) = log Inu(x) 
+            log iv(nu,k)) = log Inu(k) 
             
-        for smallish x > 0. At a fixed number of terms, accuracy depends on nu. 
+        for smallish k > 0. At a fixed number of terms, accuracy depends on nu. 
         We use this series expansion only if ive underflows, effecting an  
         automatic decision when to invoke this expansion. We found log(ive) 
         to be accurate up to the point (going to smaller x) where underflow 
         still does not happen. 
 
-        inputs: x and/or logx. 
-                Only logx is used, but it will be computed from x if not given.
+        inputs: k and/or logk. 
+                Only logk is used, but it will be computed from k if not given.
 
 
         
         """
-        x, logx = x_and_logx(x, logx, False, True)
-        num = self.exponent * (logx-log2)
+        k, logk = k_and_logk(k, logk, False, True)
+        num = self.exponent * (logk-log2)
         return logsumexp(num-self.den,axis=0)
 
 
-    def large_log_ive(self, x = None, logx = None, asymptote = True):
+    def large_log_ive(self, k = None, logk = None, asymptote = True):
         """
-        Evaluates linear asymptote for log ive(nu,x) for large x.
+        Evaluates linear asymptote for log ive(nu,k) for large k.
         
-            log ive(nu,x)) = log Inu(x) - x   --> (log2pi - logx) / 2
+            log ive(nu,k)) = log Inu(k) - k   --> (log2pi - logk) / 2
 
         If input flag asymptote = False, the results is refined using also the 
         next term of a series expansion for large arguments.
@@ -169,59 +172,60 @@ class LogBesselI:
 
             nu = 255
             logI = LogBesselI(nu)
-            for logx in (20,21):
-                raw = log_ive_raw(nu, np.exp(logx))
-                s1 = logI.large_log_ive(logx,asymptote=True)
-                s2 = logI.large_log_ive(logx,asymptote=False)
-                print(f"logx={logx}: {raw:.5f}, {s2:.5f}, {s1:.5f}")
+            for logk in (20,21):
+                raw = log_ive_raw(nu, np.exp(logk))
+                s1 = logI.large_log_ive(logk,asymptote=True)
+                s2 = logI.large_log_ive(logk,asymptote=False)
+                print(f"logk={logk}: {raw:.5f}, {s2:.5f}, {s1:.5f}")
         
-            > logx=20: -10.91901, -10.91901, -10.91894
-            > logx=21:       nan, -11.41896, -11.41894
+            > logk=20: -10.91901, -10.91901, -10.91894
+            > logk=21:       nan, -11.41896, -11.41894
 
 
         We use this call to patch up log(ive) in cases where ive returns NaN.
-        (We assume this happens only for large x. If this is not the case, 
-         the log1p below can also NaN if x is too small relative to nu.) 
+        (We assume this happens only for large k. If this is not the case, 
+        the log1p below can also NaN if k is too small relative to nu.) 
         
 
-        inputs: x and/or logx. 
-                For asymptote=True, only x is used.
+        inputs: k and/or logk. 
+                For asymptote=True, only logk is used.
                 For asymptote=False, both are used.
 
 
 
         """
-        x, logx = x_and_logx(x, logx, not asymptote, True)
-        lin_asymptote = - (log2pi + logx)/2
+        nu = self.nu
+        k, logk = k_and_logk(k, logk, not asymptote, True)
+        lin_asymptote = - (log2pi + logk)/2
         if asymptote: 
             return lin_asymptote
-        return np.log1p(-(4*nu**2-1)/(8*x)) + lin_asymptote
+        return np.log1p(-(4*nu**2-1)/(8*k)) + lin_asymptote
 
 
 
 
-    def __call__(self, x=None, logx=None, exp_scale = False):
+    def __call__(self, k=None, logk=None, exp_scale = False):
         """
-        Evaluates log I(nu, x), so that it also works for small and large 
-        values of x.
+        Evaluates log I(nu, k), so that it also works for small and large 
+        values of k.
         
-          - x = 0 is valid
+          - k = 0 is valid
           - scipy.special.ive is used, unless it underflows or returns NaN
-          - ive underflow happens when x is small relative to nu, this is
+          - ive underflow happens when k is small relative to nu, this is
             fixed by a logsumexp low-order series epansion
-          - ive NaN is probably a bug. It happens for large nu and x. It is
+          - ive NaN is probably a bug. It happens for large nu and k. It is
             fixed with a different (small) series expansion.
         
         
         inputs:
             
-            x and/ or logx: scalars or vectors
+            k and/ or logk: scalars or vectors
                
-               Both x and lox are used.
+               Both k and logk are used.
                
-               The x-values should be non-negative:
-                 if x==0 and nu > 0 -inf is returned quietly
-                 if x==0 and nu = 0, 0 is returned
+               The k-values should be non-negative:
+                 if k==0 and nu > 0 -inf is returned quietly
+                 if k==0 and nu = 0, 0 is returned
                
                   
             exp_scale: flag default=False: log Bessel-I is returned. 
@@ -230,107 +234,107 @@ class LogBesselI:
                   
         returns: scalar or vector:
             
-            log I(nu,x),       if not exp_scale          
-            log I(nu,x) - x,   if exp_scale          
+            log I(nu,k),       if not exp_scale          
+            log I(nu,k) - k,   if exp_scale          
         
         """
-        x, logx = x_and_logx(x, logx, True, False)
-        if np.isscalar(x):
-            x = np.array([x])
-            if logx is not None:
-                 logx = np.array([logx])
-            return self.__call__(x,logx,exp_scale)[0]
+        k, logk = k_and_logk(k, logk, True, False)
+        if np.isscalar(k):
+            k = np.array([k])
+            if logk is not None:
+                 logk = np.array([logk])
+            return self.__call__(k,logk,exp_scale)[0]
 
-        assert all(x >= 0)
+        assert all(k >= 0)
 
-        # try ive for all x
-        y = ive(self.nu,x) 
+        # try ive for all k
+        y = ive(self.nu,k) 
         
-        # apply logs when x=0, or y > 0 and not NaN
-        ok = np.logical_or(x==0, y > 0) # ive gives correct answer (0 or 1) for x==0
+        # apply logs when k=0, or y > 0 and not NaN
+        ok = np.logical_or(k==0, y > 0) # ive gives correct answer (0 or 1) for x==0
         with np.errstate(divide='ignore'): # y may be 0 if x ==0
             y[ok] = np.log(y[ok])       
-        if not exp_scale: y[ok] += x[ok]  # undo scaling done by ive
+        if not exp_scale: y[ok] += k[ok]  # undo scaling done by ive
         
         # patch overflow
         nan = np.isnan(y)  # we assume this signals overflow
-        xnan = x[nan]
-        log_xnan =  np.log(xnan) if logx is None else logx[nan]
-        y[nan] = self.large_log_ive(xnan, log_xnan, asymptote=False)
-        if not exp_scale: y[nan] += x[nan]  # undo scaling done by ive
+        knan = k[nan]
+        log_knan =  np.log(knan) if logk is None else logk[nan]
+        y[nan] = self.large_log_ive(knan, log_knan, asymptote=False)
+        if not exp_scale: y[nan] += knan  # undo scaling done by ive
 
         # patch underflow
         not_ok = np.logical_not(ok)
         not_nan = np.logical_not(nan)
         uf = np.logical_and(not_ok, not_nan)   
-        logx_uf =  np.log(x[uf]) if logx is None else logx[uf]
-        y[uf] = self.small_log_iv(logx=logx_uf)  
-        if exp_scale: y[uf] -= x[uf]
+        logk_uf =  np.log(k[uf]) if logk is None else logk[uf]
+        y[uf] = self.small_log_iv(logk=logk_uf)  
+        if exp_scale: y[uf] -= k[uf]
 
         return y
 
 
 
-    def log_iv(self, x=None, logx = None):
+    def log_iv(self, k=None, logk = None):
         """
-        Returns log I(nu, x). This is the same as __call__ with the default
+        Returns log I(nu, k). This is the same as __call__ with the default
         flag.
             
         See __call__ for more details.
         
         inputs:
             
-            x and/ or logx: scalars or vectors
+            k and/ or logk: scalars or vectors
                
-               Both x and lox are used.
+               Both k and lox are used.
                   
                   
-        returns: scalar or vector log I(nu,x)          
+        returns: scalar or vector log I(nu,k)          
         
         """
-        return self(x, logx, exp_scale = False)
+        return self(k, logk, exp_scale = False)
 
     
 
-    def log_ive(self, x=None, logx=None):
+    def log_ive(self, k=None, logk=None):
         """
         Returns exponentially scaled log Bessel-I: 
             
-            log [I(nu, x) exp(-x)] = log I(nu,x) - x. 
+            log [I(nu, k) exp(-k)] = log I(nu,k) - k. 
             
         This inokes __call__ with exp_scaling=True. See __call__ for more 
         details.
         
         inputs:
             
-            x and/ or logx: scalars or vectors
+            k and/ or logk: scalars or vectors
                
-               Both x and lox are used. Supply both if you have them.
+               Both k and logk are used. Supply both if you have them.
                   
                   
-        returns: scalar or vector log I(nu,x) - x          
+        returns: scalar or vector log I(nu,k) - k          
         
         """
         
-        return self(x, logx, exp_scale = True)
+        return self(k, logk, exp_scale = True)
 
 
-    def logCvmf(self, x = None, logx = None, exp_scaling = False):
+    def logCvmf(self, k = None, logk = None, exp_scale = False):
         """
         log normalization constant (numerator) for Von-Mises-Fisher 
         distribution, with nu = dim/2-1
         
         
-            log Cvmf(x) = log [ x^nu / I_nu(x) ]
+            log Cvmf(k) = log [ k^nu / I_nu(k) ]
             
             
-            VMF(z | mu, x) \propto Cvmf(x) exp[kappa*mu'z]
+            VMF(x | mu, k) \propto Cvmf(k) exp[kappa*mu'x]
             
         
         
-        input: x, and/or logx, where x >= 0 is the concentration
+        input: k and/or logk, where k >= 0 is the concentration
         
-               Both x and logx are used. Supply both if you have both.
+               Both k and logk are used. Supply both if you have both.
         
         returns: function value(s) 
                  
@@ -341,7 +345,7 @@ class LogBesselI:
             
             Cvmf omits a factor that is dependent only on the dimension.
         
-            The limit at x=0 (or logx=-np.inf) is handled in this call, 
+            The limit at k=0 (or logk=-np.inf) is handled in this call, 
             but only works for a scalar input.
             
             If you need the derivative, see LogBesselIPair.logCvmf().               
@@ -349,38 +353,38 @@ class LogBesselI:
         
         """
         nu = self.nu
-        x, log_kappa = x_and_logx(x, logx)
-        if np.isscalar(x) and x == 0:
+        k, logk = k_and_logk(k, logk)
+        if np.isscalar(k) and k == 0:
             return nu*log2 + gammaln(nu+1)  # irrespective of exp_scaling
-        logI = self(x, logx, exp_scaling)
-        y = nu*logx - logI
+        logI = self(k, logk, exp_scale)
+        y = nu*logk - logI
         return y
     
     
 
-    def logCvmf_e(self, x=None, logx=None):
+    def logCvmf_e(self, k=None, logk=None):
         """
         log normalization constant (numerator) for Von Mises-Fisher 
         distribution, with nu = dim/2-1
         
         
-            log Cvmf_e(kappa) = log [ kappa^nu / (I_nu(kappa) exp(-kappa)) ]
-                              = nu*log(kappa) + kappa - log I_nu(kappa)            
+            log Cvmf_e(k) = log [ k^nu / (I_nu(k) exp(-k)) ]
+                              = nu*log(k) + k - log I_nu(k)            
             
-            VMF(x | mu, kappa) \propto Cvmf_e(kappa) exp[kappa*(mu'x-1)]
+            VMF(x | mu, k) \propto Cvmf_e(k) exp[k*(mu'x-1)]
             
         
         
-        input: x, and/or logx, where x >= 0 is the concentration
+        input: k, and/or logk, where k >= 0 is the concentration
         
-               Both x and logx are used. Supply both if you have both.
+               Both k and logk are used. Supply both if you have both.
         
         returns: function value(s) 
                  
                  The output has the same shape as the input.
         """
         
-        return self.logCvmf(x, logx, exp_scaling=True)
+        return self.logCvmf(k, logk, exp_scale=True)
         
 
 
@@ -396,17 +400,17 @@ class LogBesselIPair:
     To compute rho = I_{n+1} / I_nu, you need both I's and then the derivatives 
     are almost free:
         
-    d/dx I(nu,x) = I(nu-1, z) - (nu/x)I(nu,x)
-                 = (nu/x)I(nu,x) + I(nu+1,x)
-                 = (I(nu-1,x) + I(nu+1,x)) / 2
+    d/dk I(nu,k) = I(nu-1, k) - (nu/x)I(nu,k)
+                 = (nu/k)I(nu,k) + I(nu+1,k)
+                 = (I(nu-1,k) + I(nu+1,k)) / 2
         
              so
     
-    d/dx I(nu+1,x) = I(nu, z) - ((nu+1)/x) I(nu+1,x)
+    d/dk I(nu+1,k) = I(nu, z) - ((nu+1)/k) I(nu+1,k)
     
     
-    What is rho? For a Von Mises-Fisher distribution, with concentration kappa,
-    0 <= rho(kappa) < 1 gives the norm of the expected value. 
+    What is rho? For a Von Mises-Fisher distribution, with concentration k,
+    0 <= rho(k) < 1 gives the norm of the expected value. 
     
     
     """
@@ -415,50 +419,50 @@ class LogBesselIPair:
         self.logI = LogBesselI(nu)
         self.logI1 = LogBesselI(nu+1)
         
-    def __call__(self, x=None, logx=None):
+    def __call__(self, k=None, logk=None):
         """
-        input: x and/or logx. Both are used, so supply both if you have them.
+        input: k and/or logk. Both are used, so supply both if you have them.
 
         returns: an IPair, from which function values and derivatives
                  can be obtained as properties.         
         
         """
         nu = self.nu
-        x, logx = x_and_logx(x, logx, True, True)
-        y = self.logI(x,logx)
-        y1 = self.logI1(x,logx)
-        return IPair(nu, x, logx, y, y1)
+        k, logk = k_and_logk(k, logk, True, True)
+        y = self.logI(k,logk)
+        y1 = self.logI1(k,logk)
+        return IPair(nu, k, logk, y, y1)
         
 
 
 class IPair:
-    def __init__(self, nu, x, logx, y, y1):
+    def __init__(self, nu, k, logk, y, y1):
         self.nu = nu
-        self.x = x
-        self.logx = logx
+        self.k = k
+        self.logk = logk
         self.logI = y
         self.logI1 = y1
         
         
     @property    
-    def dlogI_dlogx(self):
+    def dlogI_dlogk(self):
         nu = self.nu
-        logx, y, y1 = self.logx, self.logI, self.logI1
-        return nu + np.exp(logx + y1 - y)
+        logk, y, y1 = self.logk, self.logI, self.logI1
+        return nu + np.exp(logk + y1 - y)
 
     @property    
-    def dlogI1_dlogx(self):
+    def dlogI1_dlogk(self):
         nu = self.nu
-        logx, y, y1 = self.logx, self.logI, self.logI1
-        return np.exp(logx + y - y1) - (nu+1)
+        logk, y, y1 = self.logk, self.logI, self.logI1
+        return np.exp(logk + y - y1) - (nu+1)
 
     @property
-    def dlogI_dx(self):
-        return self.dI_dlogx / self.x 
+    def dlogI_dk(self):
+        return self.dI_dlogk / self.k 
 
     @property
-    def dlogI1_dx(self):
-        return self.dI1_dlogx / self.x
+    def dlogI1_dk(self):
+        return self.dI1_dlogk / self.k
 
     
     
@@ -468,39 +472,39 @@ class IPair:
         see documentation for BesselI.logCvmf
         """
         nu = self.nu
-        logx, logI = self.logx, self.logI
-        return nu*logx - logI
+        logk, logI = self.logk, self.logI
+        return nu*logk - logI
         
     @property
-    def dlogCvmf_dlogx(self):
-        return self.nu - self.dlogI_dlogx
+    def dlogCvmf_dlogk(self):
+        return self.nu - self.dlogI_dlogk
 
     @property
-    def dlogCvmf_dx(self):
-        return self.dlogCvmf_dlogx / self.x
+    def dlogCvmf_dk(self):
+        return self.dlogCvmf_dlogk / self.k
 
 
         
     @property 
     def log_rho(self):
         """
-        rho(x) = I_nu+1(x) / I_nu(x)
+        rho(k) = I_nu+1(k) / I_nu(k)
         """
-        x = self.x
-        if np.isscalar(x) and x==0:
+        k = self.k
+        if np.isscalar(k) and k==0:
             return -np.inf
         return self.logI1 - self.logI
 
     @property 
-    def dlog_rho_dlogx(self):
+    def dlog_rho_dlogk(self):
         """
         rho(x) = I_nu+1(x) / I_nu(x)
         """
-        return self.dlogI1_dlogx - self.dlogI_dlogx
+        return self.dlogI1_dlogk - self.dlogI_dlogk
     
     @property 
-    def dlog_rho_dx(self):
-        return self.dlog_rho_dlogx / self.x
+    def dlog_rho_dk(self):
+        return self.dlog_rho_dlogk / self.k
 
         
     @property
@@ -513,18 +517,18 @@ class IPair:
 
 
     @property
-    def drho_dlogx(self):
+    def drho_dlogk(self):
         """
         rho(x) = I_nu+1(x) / I_nu(x)
         """
-        return self.rho * self.dlog_rho_dlogx
+        return self.rho * self.dlog_rho_dlogk
 
     @property
-    def drho_dx(self):
+    def drho_dk(self):
         """
-        rho(x) = I_nu+1(x) / I_nu(x)
+        rho(k) = I_nu+1(k) / I_nu(k)
         """
-        return self.rho * self.dlog_rho_dx
+        return self.rho * self.dlog_rho_dk
 
 
 
@@ -538,7 +542,8 @@ def softplus(x):
 
     
 
-def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
+def fastLogCvmf_e(logI: LogBesselI, 
+                  d=np.pi, tune = True, quiet = True, err = None):
     
     """
     This works: 
@@ -549,7 +554,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     It tunes a pre-and-post-scaled-and-shifted softplus approximation to the
     function:
     
-         log Cvmf_e(log kappa). 
+         log Cvmf_e(log k). 
          
     The approximation is constrained to always obey the left limit and the 
     right linear asymptote of logCvmf_e.
@@ -563,7 +568,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
     inputs: 
         
-        nu >=0, the Bessel-I order  (nu=dim/2-1 for VMF distribution)
+        logI: LogBesselI: this contains nu = dim/2-1  
         
         d>0: (default = pi) the tunable softplus input scaling factor
         
@@ -584,6 +589,8 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
     """
     
+    nu = logI.nu
+    slow = logI.logCvmf_e
     
     left = nu*log2 + gammaln(nu+1)     # left flat asymptote
     right_offs = log2pi/2              # offset for right linear asymptote
@@ -598,32 +605,32 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     #print(f'nu={nu}: b={b}, c = {c}, d={d}')
     
     
-    approx = lambda logx: a + b*softplus(c + d*logx)
-    def f(x=None, logx=None):
-        x, logx = x_and_logx(x, logx, False, True)
-        return approx(logx)
+    approx = lambda logk: a + b*softplus(c + d*logk)
+    def f(k=None, logk=None):
+        k, logk = k_and_logk(k, logk, False, True)
+        return approx(logk)
     
     f.nu = nu
-    f.slow = slow = LogBesselI(nu).logCvmf_e
+    f.slow = slow
     if not tune: 
         f.params = (a,b,c,d)
         return f
     
-    target = lambda logx: slow(logx=logx)
+    target = lambda logk: slow(logk=logk)
     
     if err is None:
-        err = lambda logx,y: (y-target(logx))**2
-    neg_err = lambda logx: -err(logx,approx(logx))
-    logx = minimize_scalar(neg_err,(2.0,4.0)).x
+        err = lambda logk,y: (y-target(logk))**2
+    neg_err = lambda logk: -err(logk,approx(logk))
+    logk = minimize_scalar(neg_err,(2.0,4.0)).x
     
     if not quiet:
         print(f'\ntuning softplus for nu={nu}')
-        print(f'  max abs error of {np.sqrt(-neg_err(logx))} at {logx}')
+        print(f'  max abs error of {np.sqrt(-neg_err(logk))} at {logk}')
     
     def obj(d):
         b, c = bc(d)    
-        flogx = a + b*softplus(c + d*logx)
-        return err(logx,flogx)
+        flogk = a + b*softplus(c + d*logk)
+        return err(logk,flogk)
     d = minimize_scalar(obj,(d*0.9,d*1.1)).x
     if not quiet: print(f'  new d={d}, local error = {obj(d)}')
     b, c = bc(d)
@@ -631,8 +638,8 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     # this happens anyway, f already sees the new b,c,d
     # f = lambda x: a + b*softplus(c + d*x)
 
-    logx = minimize_scalar(neg_err,(2.0,4.0)).x
-    if not quiet: print(f'  new max abs error of {np.sqrt(-neg_err(logx))} at {logx}')
+    logk = minimize_scalar(neg_err,(2.0,4.0)).x
+    if not quiet: print(f'  new max abs error of {np.sqrt(-neg_err(logk))} at {logk}')
 
     f.params = (a,b,c,d)
 
@@ -640,7 +647,7 @@ def fastLogCvmf_e(nu, d=np.pi, tune = True, quiet = True, err = None):
     
 
 
-def fast_logrho(nu, quiet = True):
+def fast_logrho(logI: LogBesselI, fastLogCe = None, quiet = True):
     """
     This works ok for nu=0 and well for nu>0
     
@@ -650,7 +657,7 @@ def fast_logrho(nu, quiet = True):
     
     inputs: 
         
-        nu >=0, the Bessel-I order  (nu=dim/2-1 for VMF distribution)
+        logI: LogBesselI: this contains nu = dim/2-1  
         
         quiet: boolean (default True), print tuning progress if False
     
@@ -660,9 +667,9 @@ def fast_logrho(nu, quiet = True):
         
             f: a function handle for the fast approximation, which maps:
                 
-                x and/or logx to log rho(x). 
+                k and/or logk to log rho(k). 
                 
-                   The approximation uses only logx.
+                   The approximation uses only logk.
                 
             Extra info is returned in attached fields:    
                 f.nu 
@@ -683,41 +690,44 @@ def fast_logrho(nu, quiet = True):
 
 
     """
+    nu = logI.nu
+    logI1 = LogBesselI(nu+1)
+    Cslow = logI.logCvmf_e
+    Cslow1 = logI1.logCvmf_e
     
+    C = fastLogCe or fastLogCvmf_e(logI, tune=nu>0, quiet=quiet)
     
-    C = fastLogCvmf_e(nu,tune=nu>0,quiet=quiet)
-    C1slow = LogBesselI(nu+1).logCvmf_e
-    
-    def teacher(logx):
-        return logx + C.slow(logx=logx) - C1slow(logx=logx)
+    def teacher(logk):
+        return logk + Cslow(logk=logk) - Cslow1(logk=logk)
 
     
-    def student1(logx,c1):
-        return logx + C(logx=logx) - c1
+    def student1(logk,c1):
+        return logk + C(logk=logk) - c1
     
     
-    def err1(logx,c1):
-        return (np.exp(teacher(logx))-np.exp(student1(logx,c1)))**2
+    def err1(logk,c1):
+        return (np.exp(teacher(logk))-np.exp(student1(logk,c1)))**2
     
     
-    C1 = fastLogCvmf_e(nu+1, quiet=quiet, err=err1)
+    C1 = fastLogCvmf_e(logI1, quiet=quiet, err=err1)
     
     
-    def f(x=None, logx=None): 
-        x, logx = x_and_logx(x, logx, False, True)
-        return logx + C(logx=logx) - C1(logx=logx)
+    # fast log rho
+    def fast(k=None, logk=None): 
+        k, logk = k_and_logk(k, logk, False, True)
+        return logk + C(logk=logk) - C1(logk=logk)
     
+    # slow log rho
+    def slow(k=None, logk=None):
+        k, logk = k_and_logk(k, logk, False, True)
+        return teacher(logk)
     
-    def slow(x=None, logx=None):
-        x, log_x = x_and_logx(x, logx, False, True)
-        return teacher(logx)
-    
-    f.slow = slow
-    f.nu = nu
-    f.C = C
-    f.C1 = C1
+    fast.slow = slow
+    fast.nu = nu
+    fast.C = C
+    fast.C1 = C1
 
-    return f    
+    return fast    
     
 
 
@@ -734,7 +744,7 @@ if __name__ == "__main__":
     
     logBesselI = LogBesselI(nu,5)
     
-    small = logBesselI.small_log_iv(logx=logk)
+    small = logBesselI.small_log_iv(logk=logk)
     
     
     with np.errstate(divide='ignore'):
@@ -752,21 +762,21 @@ if __name__ == "__main__":
     
     
     
-    logx = np.linspace(-6,14,200)
+    logk = np.linspace(-6,14,200)
     nu = 127
-    pair = LogBesselIPair(nu)(logx=logx)
-    rho, drho_dlogx = pair.rho, pair.drho_dlogx
+    pair = LogBesselIPair(nu)(logk=logk)
+    rho, drho_dlogk = pair.rho, pair.drho_dlogk
     plt.figure()
-    plt.plot(logx,rho,'r',label='rho')
-    plt.plot(logx,drho_dlogx,label='dy/dx')
+    plt.plot(logk,rho,'r',label='rho')
+    plt.plot(logk,drho_dlogk,label='dy/dlogk')
     plt.grid()
     plt.xlabel('log k')
     plt.ylabel('rho')
     plt.title(f'nu = {nu}')
     
-    fastlogrho = fast_logrho(nu)
-    y = np.exp(fastlogrho(logx=logx))
-    plt.plot(logx,y,'g--',label='rho approx')
+    fastlogrho = fast_logrho(LogBesselI(nu))
+    y = np.exp(fastlogrho(logk=logk))
+    plt.plot(logk,y,'g--',label='rho approx')
     
     
     plt.legend()
@@ -774,18 +784,19 @@ if __name__ == "__main__":
     
     
     
-    logx = np.linspace(-6,20,200)
+    logk = np.linspace(-6,20,200)
     plt.figure()
     for dim in [128, 256, 512]:
         nu = dim/2-1
-        bi = LogBesselI(nu)
-        y = bi.logCvmf_e(logx=logx)
-        plt.plot(logx,y,label=f'dim={dim}')
-        y = (nu+0.5)*logx + log2pi/2
-        plt.plot(logx,y,'--')
+        logI = LogBesselI(nu)
+        y = logI.logCvmf_e(logk=logk)
+        plt.plot(logk,y,label=f'dim={dim}')
+        y = (nu+0.5)*logk + log2pi/2
+        plt.plot(logk,y,'--')
     plt.grid()
-    plt.xlabel('log kappa')
-    plt.ylabel('log C_nu(kappa) + k')
+    plt.xlabel('log k')
+    plt.ylabel('log C_nu(k) + k')
+    plt.title('asymptotes')
     plt.legend()
     plt.show()
     
@@ -793,18 +804,18 @@ if __name__ == "__main__":
 
     
 
-    logx = np.linspace(-5,21,200)
-    x = np.exp(logx)
+    logk = np.linspace(-5,21,200)
+    x = np.exp(logk)
     plt.figure()
     #for dim in [100, 110, 120]:
     for dim in [128, 256, 512]:
     #for dim in [2, 3, 4]:
         nu = dim/2-1
-        fast = fastLogCvmf_e(nu,tune=nu>0,quiet=False)
+        fast = fastLogCvmf_e(LogBesselI(nu), tune=nu>0, quiet=False)
         target = fast.slow
-        y = target(x,logx)
-        plt.plot(logx,y,label=f'dim={dim}')
-        plt.plot(logx,fast(x,logx),'--')
+        y = target(x,logk)
+        plt.plot(logk,y,label=f'dim={dim}')
+        plt.plot(logk,fast(x,logk),'--')
         
         
     plt.grid()
@@ -817,12 +828,12 @@ if __name__ == "__main__":
     print("\n\n")
     nu = 255
     logI = LogBesselI(nu)
-    for logx in (20,21):
-        x = np.exp(logx)
-        raw = log_ive_raw(nu, x)
-        s1 = logI.large_log_ive(x, logx,asymptote=True)
-        s2 = logI.large_log_ive(x, logx,asymptote=False)
-        print(f"logx={logx}: {raw:.5f}, {s2:.5f}, {s1:.5f}")
+    for logk in (20,21):
+        k = np.exp(logk)
+        raw = log_ive_raw(nu, k)
+        s1 = logI.large_log_ive(k, logk,asymptote=True)
+        s2 = logI.large_log_ive(k, logk,asymptote=False)
+        print(f"logk={logk}: {raw:.5f}, {s2:.5f}, {s1:.5f}")
         
         
         
