@@ -1,79 +1,21 @@
 import numpy as np
 
-from scipy.special import ive, gammaln, logsumexp
+#from scipy.special import gammaln
 from scipy.optimize import toms748
 
 
-from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu
-
-def logfactorial(x):
-    """
-    Natural log of factorial. Invokes scipy.special.gammaln.
-    log x! = log gamma(x+1)
-    """
-    return gammaln(x+1)
+from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_uniform
+from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, k_and_logk
 
 
-
-class LogBesselI:
-    """
-    We use scipy for larger arguments and a logsumexp over a small
-    series expansion for small arguments. The scipy implementation is OK
-    for large arguments, because we use the exponentially scaled (ive)
-    variant.
-
-    For later, if we need derivatives:
-    See: https://functions.wolfram.com/Bessel-TypeFunctions/BesselI/20/ShowAll.html
-
-    d/dx I(nu,x) = I(n-1, z) - (nu/x)I(nu,x)
-                 = (nu/x)I(nu,x) + I(nu+1,x)
-                 = (I(nu-1,x) + I(nu+1,x)) / 2
-
-    """
-    def __init__(self, nu, n=5):
-        self.nu = nu
-        self.n = n
-        m = np.arange(n)
-        self.exp = (2*m+nu).reshape(-1,1)
-        self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
-        self.thr = np.sqrt(self.nu+1)
-
-    def switchover(self):
-        x = self.thr
-        return x, self.small(x), self.large(x)
-
-    def __call__(self,x):
-        y = self.splice(x)
-        return y
+# def logfactorial(x):
+#     """
+#     Natural log of factorial. Invokes scipy.special.gammaln.
+#     log x! = log gamma(x+1)
+#     """
+#     return gammaln(x+1)
 
 
-    def splice(self,x):
-        if np.isscalar(x):
-            return self.__call__(np.array([x]))[0]
-        zeros = x==0
-        small = np.logical_and(x < self.thr, x > 0)
-        large = np.logical_not(small)
-        y = np.zeros_like(x)
-        y[zeros] = self.nu == 0
-        y[small] = self.small(x[small])
-        y[large] = self.large(x[large])
-        return y
-
-
-
-    def small(self,x):
-        """
-        short series expansion for log Inu(x) for 0 < x, smallish
-        """
-        num = self.exp*np.log(x/2)
-        return logsumexp(num-self.den,axis=0)
-
-
-    def large(self,x):
-        """
-        log Inu(x), for x not too small (log 0 warning if x too small)
-        """
-        return np.log(ive(self.nu,x)) + x
 
 
 
@@ -99,41 +41,42 @@ class LogNormConst:
     and rhoinv_fast(rho), that does a fast approximation.
 
     """
-    def __init__(self,dim,n=5):
-        self.nu = nu = dim/2-1
+    def __init__(self,dim):
         self.dim = dim
-        self.logInu = LogBesselI(nu,n)
-        self.logInu1 = LogBesselI(nu+1,n)
+        self.nu = nu = dim/2-1
+        self.logI = logI = LogBesselI(nu)
+        self.logCvmf_e = logI.logCvmf_e
+        self.fastlogCvmf_e = fastLogCe = fastLogCvmf_e(logI)
+        self.fastlogrho = fastlogrho = fast_logrho(logI, fastLogCe)
+        self.logrho = fastlogrho.slow
 
 
-    def __call__(self, k):
+    def __call__(self, k = None, logk = None, fast = False, exp_scale = False):
         """
         Returns the log normalization constant, omitting a term dependent
         only on the dimensionality, nu.
 
-        k > 0: the VMF concentration parameter
+        kappa > 0: the VMF concentration parameter
 
-        The limit at k--> 0 exists, but is not implemented yet
 
         """
-        nu, logInu = self.nu, self.logInu
-        return nu*np.log(k) - logInu(k)
+        k, logk = k_and_logk(k, logk)
+        logCe = self.fastlogCvmf_e(k, logk) if fast else \
+                self.logCvmf_e(k, logk)
+        if exp_scale: return logCe
+        return logCe - k
 
 
-    def rho(self,k):
+    def rho(self, k = None, logk = None, fast = False):
         """
         The norm of the expected value for VMF(nu,k). The expected value is
         monotonic rising, from rho(0) = 0 to rho(inf) = 1. The limit at 0
         is handled explicitly, but the one at infinity is not implemented.
         """
-        if np.isscalar(k):
-            return self.rho(np.array([k]))[0]
-        nz = k>0
-        r = np.zeros_like(k)
-        if np.any(nz):
-            knz = k[nz]
-            r[nz] = np.exp(self.logInu1(knz) - self.logInu(knz))
-        return r
+        log_rho = self.fastlogrho(k, logk) if fast else \
+                  self.logrho(k, logk)
+        return np.exp(log_rho)
+
 
     def rhoinv_fast(self,rho):
         """
@@ -151,15 +94,20 @@ class LogNormConst:
         return k
 
 
-    def rhoinv(self,rho):
+    def rhoinv(self, rho, fast=False):
         """
         Slower, more accurate inversion of rho using a root finder.
+        Except, if fast = True, it just calls rhoinv_fast.
         """
+
+        # probably more accurate than iverting the fast rho approximation
+        if fast: return self.rhoinv_fast(rho)
+
         if not np.isscalar(rho):
-            return np.array([self.rhoinv(ri) for ri in np.atleast_1d(rho)])
+            return np.array([self.rhoinv(ri) for ri in rho])
         if rho == 0: return 0.0
         k0 = self.rhoinv_fast(rho)
-        f = lambda x: self.rho(np.exp(x)) - rho
+        f = lambda logk: self.rho(logk = logk) - rho
         left = np.log(k0)
         fleft = f(left)
         if fleft == 0: return k0
@@ -187,8 +135,12 @@ def decompose(x):
     """
     if x.ndim == 1:
         norm = np.sqrt((x**2).sum(axis=-1))
+        if norm == 0: return 0.0, x
         return norm, x/norm
     norm = np.sqrt((x**2).sum(axis=-1,keepdims=True))
+    zeros = norm == 0
+    if np.any(zeros):
+        norm[zeros] = 1
     return norm.squeeze(), x/norm
 
 def compose(norm,mu):
@@ -206,7 +158,7 @@ class VMF:
     """
     Von Mises-Fisher distribution. The parameters are supplied at construction.
     """
-    def __init__(self, mu, k = None, logC = None):
+    def __init__(self, mu=None, k = None, logC = None):
         """
         mu: (dim, ): mean direction, must be lengh-normalized.
 
@@ -228,6 +180,9 @@ class VMF:
                    supplied to save memory and compute.
 
         """
+        if np.isscalar(mu):  # dim <- mu, k <- 0
+            k = 0.0
+            mu = sample_uniform(mu)
         if k is None:
             kmu = mu
             k, mu = decompose(mu)
@@ -260,6 +215,11 @@ class VMF:
         return self.kmu
 
     @classmethod
+    def uniform(cls, dim):
+        return cls(dim)
+
+
+    @classmethod
     def max_likelihood(cls, mean, logC = None):
         """
         The returns the maximum-likelihood estimate(s) for one or more VMFs, given
@@ -277,8 +237,8 @@ class VMF:
 
         """
         norm, mu = decompose(mean)
-        assert np.all(norm < 1),  "The mean norm must be strictly < 1"
-        dim = mean.shape[-1]
+        assert norm < 1,  "The mean norm must be strictly < 1"
+        dim = len(mean)
         if logC is None:
             logC = LogNormConst(dim)
         else:
@@ -339,6 +299,8 @@ class VMF:
             n = n_or_labels
             assert mu.ndim == 1
             assert np.isscalar(self.k)
+            if self.k==0:
+                return sample_uniform(dim,n)
             X = np.vstack([sample_vmf_canonical_mu(dim,self.k) for i in range(n)])
             X = rotate_to_mu(X,mu)
 
