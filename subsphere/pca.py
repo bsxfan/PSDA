@@ -51,7 +51,7 @@ class UnitSphere:
         return ConcentricSubsphere(F)
     
     
-    def randomCCSub(self, d):
+    def randomConcentricSubsphere(self, d):
         D = self.D
         assert 2 <= d < D
         R = randn(D,d)
@@ -85,7 +85,9 @@ class ConcentricSubsphere:
            F determines the orientation of the subsphere 
         """
         self.F = F
-        self.D, self.d = F.shape
+        self.D, self.d = D, d = F.shape
+        self.Ud = UnitSphere(d)
+        self.UD = UnitSphere(D)
 
 
 
@@ -112,14 +114,32 @@ class ConcentricSubsphere:
         return Z @ F.T
     
     
+    def sample(self, n, kappa=None):
+        """
+        If kappa is None: generate n samples on the subsphere
+        
+        If kappa > 0: genarate n samples on the subsphere and then replace 
+                      each sample, s, with a sample from VMF(s, kappa).
+                      This amounts to sampling from a factor-analysis model.
+        """
+        Ud, UD = self.Ud, self.UD
+        Z = Ud.sampleVMF(n)
+        Y = S0.represent(Z)
+        if kappa is None: return Y
+        return UD.sampleVMF(Y,kappa)
+        
+    
+    
+    
     
 def PCA(X, d, niters=10, quiet = False):
     n,D = X.shape
     assert 2 <= d < D
     U = UnitSphere(D)
 
+    #S = U.randomConcentricSubsphere(d)   # this works too
     Z = lengthnorm(randn(n, d))
-    S = U.align(X, Z)
+    S = U.align(X, Z)               # this seems to give a better start
 
     for i in range(niters):
         Z = S.project(X)
@@ -137,17 +157,23 @@ def PCA(X, d, niters=10, quiet = False):
 if __name__ == "__main__":
     
     
-    D, d = 3, 2
-    n = 200
+    D, d = 256, 128
+    n = 2000
     
     Ud = UnitSphere(d)
     UD = UnitSphere(D)
     
-    S0 = UD.randomCCSub(d)
-    Z = Ud.sampleVMF(n)
-    Y = S0.represent(Z)
     
-    X = UD.sampleVMF(Y,20)
+    # create a factor analysis model
+    S0 = UD.randomConcentricSubsphere(d)
+    #kappa = 1000
+    kappa = None
+    
+    # sample from it
+    print('sampling')
+    X = S0.sample(n, kappa)
+    
+    print('\nPCA')
     S = PCA(X,d)
     
 
