@@ -21,9 +21,7 @@ class MixPSDA:
     def __init__(self,
                  p_i:float,
                  within_concentration:float,
-                 between_distr:VMF,
-                 tied_b=False,
-                 tied_w=False):
+                 between_distr:VMF):
         """
         model = MixPSDA(w, VMF(mu, b))
 
@@ -45,8 +43,6 @@ class MixPSDA:
 
 
         """
-        self.tied_w = tied_w
-        self.tied_b = tied_b
         self.p_i = p_i
         self.w = w = within_concentration
         self.between = between = between_distr
@@ -58,11 +54,26 @@ class MixPSDA:
         self.logCb = logC(b)
         self.logCw = logC(w)
 
-        self.gamma1 = (np.log(self.p_i) + self.between.logCk)[:,None]
-        self.gamma2 = self.logC(self.w)
-        if not np.isscalar(self.gamma2):
-            self.gamma2 = self.gamma2[:,None]
+        self.ncomp = len(p_i)
+        assert self.mu.shape[0] == self.ncomp, "Expecting {self.ncomp} means."
+        self.tied_w = self.w.size < self.ncomp
+        self.tied_b = self.b.size < self.ncomp
 
+    def save(self,fname):
+        import h5py
+        with h5py.File(fname,'w') as h5:
+            h5["pi"] = self.p_i
+            h5["w"] = self.w
+            self.between.save_to_h5(h5,"between")
+
+    @classmethod
+    def load(cls,fname):
+        import h5py
+        with h5py.File(fname,'r') as h5:
+            w = np.asarray(h5["w"])
+            p_i = np.asarray(h5["p_i"])
+            between = VMF.load_from_h5(h5,"between")
+        return cls(w,between)
 
     # def marg_llh(self, data_sum, count):
     #     """

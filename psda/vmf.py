@@ -58,12 +58,14 @@ class LogNormConst:
 
         kappa > 0: the VMF concentration parameter
 
+
         """
         k, logk = k_and_logk(k, logk)
         logCe = self.fastlogCvmf_e(k, logk) if fast else \
                 self.logCvmf_e(k, logk)
         if exp_scale: return logCe
         return logCe - k
+
 
     def rho(self, k = None, logk = None, fast = False):
         """
@@ -73,8 +75,8 @@ class LogNormConst:
         """
         log_rho = self.fastlogrho(k, logk) if fast else \
                   self.logrho(k, logk)
-
         return np.exp(log_rho)
+
 
     def rhoinv_fast(self,rho):
         """
@@ -89,8 +91,8 @@ class LogNormConst:
             rhonz = rho[nz]
             rho2 = rhonz**2
             k[nz] = rhonz*(dim-rho2) / (1-rho2)
-
         return k
+
 
     def rhoinv(self, rho, fast=False):
         """
@@ -137,11 +139,9 @@ def decompose(x):
         return norm, x/norm
     norm = np.sqrt((x**2).sum(axis=-1,keepdims=True))
     zeros = norm == 0
-
     if np.any(zeros):
         norm[zeros] = 1
     return norm.squeeze(), x/norm
-
 
 def compose(norm,mu):
     """
@@ -153,7 +153,6 @@ def compose(norm,mu):
     """
     if not np.isscalar(norm): norm = norm.reshape(*(*mu.shape[:-1],1))
     return norm*mu
-
 
 class VMF:
     """
@@ -201,6 +200,16 @@ class VMF:
         self.logCk = logC(k)
         self.rho = logC.rho   # function to compute k -> norm of mean
 
+    def save_to_h5(self,h5,path):
+        h5[f"{path}/mu"] = self.mu
+        h5[f"{path}/k"] = self.k
+
+    @classmethod
+    def load_from_h5(cls,h5,path):
+        mu = np.asarray(h5[f"{path}/mu"])
+        k = np.asarray(h5[f"{path}/k"])
+        return cls(mu,k)
+
     def mean(self):
         """
         Returns the expected value in R^d, which is inside the sphere,
@@ -219,10 +228,6 @@ class VMF:
     def uniform(cls, dim):
         return cls(dim)
 
-
-    @classmethod
-    def uniform(cls, dim):
-        return cls(dim)
 
     @classmethod
     def max_likelihood(cls, mean, logC = None):
