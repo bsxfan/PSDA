@@ -5,7 +5,7 @@ PSDA: Probabilistic Spherical Discriminant Analysis
 import numpy as np
 from numpy import ndarray
 
-from vmf import VMF, compose, decompose
+from psda.vmf import VMF, compose, decompose
 
 
 
@@ -47,6 +47,19 @@ class PSDA:
         self.logCb = logC(b)
         self.logCw = logC(w)
 
+    def save(self,fname):
+        import h5py
+        with h5py.File(fname,'w') as h5:
+            h5["w"] = self.w
+            self.between.save_to_h5(h5,"between")
+
+    @classmethod
+    def load(cls,fname):
+        import h5py
+        with h5py.File(fname,'r') as h5:
+            w = np.asarray(h5["w"])
+            between = VMF.load_from_h5(h5,"between")
+        return cls(w,between)
 
     def zposterior(self, data_sum:ndarray):
         """
@@ -149,7 +162,9 @@ class PSDA:
         obj = []
         for i in range(niters):
             psda, llh = psda.em_iter(means,counts,total)
-            if not quiet: print(f"em iter {i}: {llh}")
+            if not quiet:
+                #print(f"em iter {i}: {llh}")
+                print(f"em iter {i}: {llh}","B =",psda.b, "W =",psda.w,"mu =",psda.between.mu.ravel())
             obj.append(llh)
         return psda, obj
 

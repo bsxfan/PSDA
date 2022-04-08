@@ -2,30 +2,27 @@ import numpy as np
 from numpy.random import randn, randint
 import matplotlib.pyplot as plt
 
-from psda import VMF, PSDA, decompose, atleast2
+from psda.psda import VMF, PSDA, decompose, atleast2
 from pyllr import quick_eval
 
-"""
-This demo uses a quick-and-dirty data simulator, using Gaussians, not VMF.
-It does not work for high dimensions. But you can play with dim = 2 or 3
-if you like.
-"""
-dim = 20
-b, w = 10, 50  # within, between concentrations
+dim = 100
+b, w = 50, 100  # within, between concentrations 
 
-ns = 100  # number of training speakers
-n = 1000  # numer of training examples
+ns = 500  # number of training speakers
+n = 10000  # numer of training examples
 
-
+     
 # set up model to sample from
-norm, mu = decompose(randn(dim))
+norm, mu = decompose(randn(dim)) 
 model0 = PSDA(w, VMF(mu, b))
 
+print(f'sampling {ns} training speakers')
 Z = model0.sample_speakers(ns)
 labels = randint(ns,size=(n,))
 uu, labels, counts = np.unique(labels, return_inverse=True, return_counts=True)
 
 # sample training data
+print(f'sampling {n} training data')
 Xtrain = model0.sample(Z, labels)
 
 if dim == 2:
@@ -37,6 +34,8 @@ if dim == 2:
     plt.grid()
     plt.title('Embeddings')
     plt.show()
+
+print('training')
 
 
 # one hot label matrix
@@ -60,14 +59,20 @@ plt.xlabel('iteration')
 plt.ylabel('marginal likelihood')
 plt.show()
 
-# generate some test data
+# generate some test data 
 nt = 10000
-Z1 = model0.sample_speakers(nt)
-Z2 = model0.sample_speakers(nt)
-Enroll = model0.sample(Z1, np.arange(nt))  # enrollment embeddings
-Test1 = model0.sample(Z1, np.arange(nt))   # target test embeddings
-Test2 = model0.sample(Z2, np.arange(nt))   # nnotar test embeddings
+print(f'sampling {ns*2} test speakers')
+Z1 = model0.sample_speakers(ns)
+Z2 = model0.sample_speakers(ns)
+labels1 = randint(ns,size=(nt,))
+labels2 = randint(ns,size=(nt,))
 
+print(f'sampling {nt*3} test data')
+Enroll = model0.sample(Z1, labels1)  # enrollment embeddings
+Test1 = model0.sample(Z1, labels1)   # target test embeddings 
+Test2 = model0.sample(Z2, labels2)   # nnotar test embeddings
+
+print('scoring single enroll')
 # compute PSDA scores
 E = model.prep(Enroll)
 T1 = model.prep(Test1)
@@ -93,7 +98,10 @@ plt.show()
 
 
 # compute double-enroll PSDA scores
-Enroll2 = model0.sample(Z1, np.arange(nt))  # 2nd enrollment embeddings
+print(f'sampling {nt} 2nd enrollments')
+Enroll2 = model0.sample(Z1, labels1)  # 2nd enrollment embeddings
+
+print('scoring double enroll')
 E2 = model.prep(Enroll + Enroll2)
 tar2 = E2.llr_vector(T1)
 non2 = E2.llr_vector(T2)
@@ -110,6 +118,8 @@ non12 = np.hstack([non,non2])
 tar12c = np.hstack([tarc,tar2c])
 non12c = np.hstack([nonc,non2c])
 
+
+print('evaluating')
 
 eer_p, cllr_p, mincllr_p = quick_eval.tarnon_2_eer_cllr_mincllr(tar, non)
 eer_p2, cllr_p2, mincllr_p2 = quick_eval.tarnon_2_eer_cllr_mincllr(tar2, non2)
@@ -150,3 +160,21 @@ print("\nPSDA scoring, mixed enroll:")
 print(f"  EER:     {eer_p12*100:.1f}%")
 print(f"  Cllr:    {cllr_p12:.3f}")
 print(f"  minCllr: {mincllr_p12:.3f}")
+
+
+plt.figure()
+plt.hist(non,100,label='non')
+plt.hist(tar,100,label='tar',alpha=0.5)
+plt.title(f'PSDA LLR, EER={eer_p*100:.1f}%')
+plt.grid()
+plt.legend()
+plt.show()
+
+plt.figure()
+plt.hist(nonc,100,label='non')
+plt.hist(tarc,100,label='tar',alpha=0.5)
+plt.title(f'cosine, EER={eer_c*100:.1f}%')
+plt.grid()
+plt.legend()
+plt.show()
+
