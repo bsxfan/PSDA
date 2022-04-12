@@ -170,8 +170,46 @@ class UnitSphere:
             D = mu.shape[-1]
             assert D == self.D
             return VMF(mu, kappa).sample()
+        
+        
+        
+    def latitude(self,lat,long=None):
+        assert self.D == 3
+        c = np.array([0,0,1.0])
+        F = np.vstack([np.eye(2),np.zeros(2)])
+        S = Subsphere(F, c, lat)               
+        if long is None: return S
+        if np.isscalar(long):
+            long = np.linspace(0,2*np.pi,long)
+        Z = np.vstack([np.cos(long),np.sin(long)]).T
+        return S.represent(Z)
 
         
+    def meridian(self,long,lat=None):
+        assert self.D == 3
+        F = np.vstack(([np.cos(long),np.sin(long),0],[0,0,1])).T
+        S = ConcentricSubsphere(F)               
+        if lat is None: return S
+        if np.isscalar(lat):
+            lat = np.linspace(0,2*np.pi,lat)
+        Z = np.vstack([np.cos(lat),np.sin(lat)]).T
+        return S.represent(Z)
+
+
+    def globe(self, ax):
+        assert self.D == 3
+        ax.grid(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])        
+        lat = np.array([-75,-60,-45,-30,-15,0,15,30,45,60,75])*np.pi/180
+        long = np.array([0,15,30,45,60,75,90,105,120,135,150,165])*np.pi/180
+        for lati in lat:
+            ax.plot(*self.latitude(lati,100).T,color='gray')
+        for longi in long:
+            ax.plot(*self.meridian(longi,100).T,color='gray')
+        
+
         
         
 class ConcentricSubsphere:
@@ -400,9 +438,12 @@ if __name__ == "__main__":
     #cc = [cmap(s/ns) for s in labels]
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(*UD.sampleVMF(300).T, color='k', marker='.', label='uniform on unitsphere')
+    # ax.scatter(*UD.sampleVMF(300).T, color='k', marker='.', label='uniform on unitsphere')
+    UD.globe(ax)
     ax.scatter(*X.T, color='r', marker='.',label='data close to subsphere')
     ax.scatter(*S.roundtrip(X).T, color='g', marker='.',label='learnt subsphere')
+    # ax.plot(*UD.latitude(0,100).T,label='equator',color='gray')
+    # ax.plot(*UD.meridian(0,100).T,label='Greenwich')
     ax.set_xlim([-1,1])
     ax.set_ylim([-1,1])
     ax.set_zlim([-1,1])
