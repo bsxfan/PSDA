@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.random import randn
 
-from scipy.linalg import eigh
+from scipy.linalg import eigh, svd, sqrtm, solve
 
 from psda.vmf import VMF, decompose
 
@@ -13,8 +13,64 @@ def lengthnorm(x):
 
 
 def invsqrtm(C):
+    """
+    Inverse, symmetric matrix square root of a symmetric, positive definite 
+    matrix. The result is symmetric positive definite.
+    """
     e, V = eigh(C) # C = (V*e) @ V.T
+    assert all(e>0), "input must be possitive definite"
     return (V / np.sqrt(e)) @ V.T
+
+
+def retract_eigh(R):
+    """
+    Project tall matrix to the Stiefel manifold, so that it has orthonormal 
+    columns. The projection maximizes trace(input.T @ output), subject to the 
+    constraint. This is equivalent to minimzing Euclidean distance: the 
+    projection is the closest point on the manifold.
+    
+    input:
+        
+        R: (D,d) with D >= d and the rank must be full (= d).
+        
+    output: F (D,d), such that F'F = I_d 
+    
+    
+    This method is the fastest of the retract methods in this module.
+    
+    """
+    if R.ndim==1: return lengthnorm(R)
+    return R @ invsqrtm(R.T @ R)  # (D,d) @ (d,d)
+    
+
+
+def retract_svd(R):
+    """
+    The result is mathematically equivalent to retract_eigh(R). See the 
+    documentation for that function.
+    
+    This method is about 2x slower that retract_eigh, when using the default 
+    scipy eigh and svd. Nevertheless, it is attractive becasue of its relative
+    simplicity and more direct computation. If we ever need to autodiff backprop 
+    through this function, it is possible this one may be preferable ...
+    
+    """
+    if R.ndim==1: return lengthnorm(R)
+    U, s, Vt = svd(R, full_matrices=False)
+    return U@Vt
+
+def retract_sqrtm(R):
+    """
+    The result is mathematically equivalent to retract_eigh. See the 
+    documentation for that function.
+    
+    This variant has no obvious advantages and is also slowest.
+    """
+    if R.ndim==1: return lengthnorm(R)
+    return solve(sqrtm(R.T@R), R.T).T
+
+
+retract = retract_eigh
 
 
 class UnitSphere:
@@ -34,11 +90,11 @@ class UnitSphere:
             Z: corresponding points in S^{d-1}
             
         Find the orientation matrix F (D,d) that aligns them and return
-        the induced subsphere.
+        the induced concentric subsphere.
             
         
         X: (n,D)
-        Z: (n, d)
+        Z: (n,d)
         
         """
         n, D = X.shape
@@ -46,16 +102,18 @@ class UnitSphere:
         nz, d = Z.shape
         assert 2 <= d < D and n==nz
         
-        R = X.T @ Z    # (D,d)
-        F =  R @ invsqrtm(R.T @ R)  # (D,d) @ (d,d)
+        F = retract(X.T @ Z)    # (D,d)
         return ConcentricSubsphere(F)
+    
+    
+    
+    
     
     
     def randomConcentricSubsphere(self, d):
         D = self.D
-        assert 2 <= d < D
-        R = randn(D,d)
-        F =  R @ invsqrtm(R.T @ R)  # (D,d) @ (d,d)
+        assert 1 <= d < D
+        F = retract(randn(D,d))
         return ConcentricSubsphere(F)
         
 
@@ -107,8 +165,12 @@ class ConcentricSubsphere:
         Given length-normalized input(s) of dimension d, represent it as (a)
         point(s) of dimension D in the enclosing unitsphere
         
-        
-        Z: (n,d), or (d,), length-normalized
+        Input: 
+
+            Z: (n,d), or (d,), length-normalized
+            
+            
+        Output: (n,D), or (D,) length-normalized    
         """
         F = self.F  # (D,d) 
         return Z @ F.T
@@ -124,13 +186,77 @@ class ConcentricSubsphere:
         """
         Ud, UD = self.Ud, self.UD
         Z = Ud.sampleVMF(n)
-        Y = S0.represent(Z)
+        Y = self.represent(Z)
         if kappa is None: return Y
         return UD.sampleVMF(Y,kappa)
         
     
+class Subsphere(ConcentricSubsphere):
+    """
+    Generalization of ConcentricSubsphere to allow a subsphere center away from 
+    the enclosing unitsphere center and a subsphere radius of less than one. 
+    """
+    def __init__(self,F,c,theta=None):
+        """
+        F: (D,d) with orhtonormal columns, orientatio matrix
+        c: (D,) c'c=1, unit direction vector of subsphere center
+        theta: angle, such that subsphere radius = cos(theta)
+                      and center is at sin(theta) * c
+                      
+               (optional) if not given, c is taken as subsphere center with 
+                                        c'c < 1       
+                                        
+               Note: theta is the angle between the unitshpere and subsphere 
+                     radii                         
+                                        
+        """
+        super().init(F)
+        if theta is None:
+            k = c
+            s, c = decompose(k)
+            theta = np.arcsin(s)
+        self.c = c
+        self.theta = theta    # angle between unitshpere and subsphere radii
+                                        
+        self.r = np.cos(theta)         # subsphere radius
+        self.s = s = np.sin(theta)
+        self.k = s*c                   # subsphere center
+        
+    def represent(self,Z):
+        """
+        Given length-normalized input(s) of dimension d, represent it as (a)
+        point(s) of dimension D in the enclosing unitsphere
+        
+        Input: 
+
+            Z: (n,d), or (d,), length-normalized
+            
+            
+        Output: (n,D), or (D,) length-normalized    
+        """
+        return self.r*super().represent(Z) + self.k
     
-    
+
+    def relocate(self, X, xbar, Z):
+        """
+        This is a generalization of align. Given data and
+        temporarily fixed Z, it:
+            - updates theta, given current values for F and c
+            - updates F and c, given the new theta
+            
+        returns a new Subsphere, with the updated values    
+        """
+        Rbar = (X.T@Z)/X.shape[0]  #(D,d)
+        theta = np.atan2(self.c@xbar, (self.F*Rbar).sum())
+        r, s = np.cos(theta), np.sin(theta)
+        D,d = Rbar.shape
+        Fbrev = retract(np.hstack([r*Rbar,s*xbar.reshape(-1,1)]))
+        F, c = Fbrev[:,:-1], Fbrev[:,-1]
+        return Subsphere(F, c, theta)
+
+
+
+
     
 def PCA(X, d, niters=10, quiet = False):
     n,D = X.shape
@@ -166,8 +292,8 @@ if __name__ == "__main__":
     
     # create a factor analysis model
     S0 = UD.randomConcentricSubsphere(d)
-    #kappa = 1000
-    kappa = None
+    kappa = 20
+    #kappa = None
     
     # sample from it
     print('sampling')
