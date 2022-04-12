@@ -71,9 +71,11 @@ class MixPSDA:
         import h5py
         with h5py.File(fname,'r') as h5:
             w = np.asarray(h5["w"])
-            p_i = np.asarray(h5["p_i"])
+            p_i = np.asarray(h5["pi"])
+            w = np.atleast_1d(w)
+            p_i = np.atleast_1d(p_i)
             between = VMF.load_from_h5(h5,"between")
-        return cls(w,between)
+        return cls(p_i,w,between)
 
     # def marg_llh(self, data_sum, count):
     #     """
@@ -138,8 +140,8 @@ class MixPSDA:
 
     @classmethod
     def em(cls, means: ndarray, counts: ndarray,
-           psda_init = None,
-           niters = 10, w0 = 1.0, quiet = False):
+           niters = 10, w0 = 1.0, quiet = False,
+           psda_init = None, fname_tmp=None):
         """
         Trains a MixPSDA model from data.
 
@@ -167,6 +169,9 @@ class MixPSDA:
         llh0 = 0
         for i in range(niters):
             psda, llh = psda.em_iter(means,counts)
+            if fname_tmp is not None:
+                psda.save(fname_tmp.format(iter=i))
+
             impr = llh - llh0; llh0 = llh
             if not quiet:
                 print(f"em iter {i}: {impr}","B =",psda.b, "W =",psda.w,"mu =",psda.between.mu.ravel()[:6])
@@ -180,7 +185,7 @@ class MixPSDA:
         """
         if ncomp is None:
             assert not (w0 is None and b0 is None)
-            ncomp = len(w0) if b0 is None else b0.size
+            ncomp = np.atleast_1d(w0).size if b0 is None else np.atleast_1d(b0).size
 
         pi0 = np.ones(ncomp)/ncomp
         w0 = rng.uniform(100,1000,size=ncomp).astype(float)

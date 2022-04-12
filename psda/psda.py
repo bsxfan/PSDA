@@ -58,6 +58,7 @@ class PSDA:
         import h5py
         with h5py.File(fname,'r') as h5:
             w = np.asarray(h5["w"])
+            w = np.atleast_1d(w)
             between = VMF.load_from_h5(h5,"between")
         return cls(w,between)
 

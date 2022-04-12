@@ -208,6 +208,8 @@ class VMF:
     def load_from_h5(cls,h5,path):
         mu = np.asarray(h5[f"{path}/mu"])
         k = np.asarray(h5[f"{path}/k"])
+        mu = np.atleast_2d(mu)
+        k = np.atleast_1d(k)
         return cls(mu,k)
 
     def mean(self):
