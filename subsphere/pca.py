@@ -196,14 +196,18 @@ class UnitSphere:
         return S.represent(Z)
 
 
-    def globe(self, ax):
+    def globe(self, ax, fine=True):
         assert self.D == 3
         ax.grid(False)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_zticks([])        
-        lat = np.array([-75,-60,-45,-30,-15,0,15,30,45,60,75])*np.pi/180
-        long = np.array([0,15,30,45,60,75,90,105,120,135,150,165])*np.pi/180
+        if fine:
+            lat = np.array([-75,-60,-45,-30,-15,0,15,30,45,60,75])*np.pi/180
+            long = np.array([0,15,30,45,60,75,90,105,120,135,150,165])*np.pi/180
+        else:
+            lat = np.array([-60,-30,0,30,60])*np.pi/180
+            long = np.array([0,30,60,90,120,150])*np.pi/180
         for lati in lat:
             ax.plot(*self.latitude(lati,100).T,color='gray')
         for longi in long:
