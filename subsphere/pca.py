@@ -213,6 +213,10 @@ class ConcentricSubsphere:
         F = self.F  # (D,d) 
         return Z @ F.T
     
+    def roundtrip(self, X):
+        return self.represent(self.project(X))
+
+
     
     def sample(self, n, kappa=None):
         """
@@ -273,6 +277,8 @@ class Subsphere(ConcentricSubsphere):
         Output: (n,D), or (D,) length-normalized    
         """
         return self.r*super().represent(Z) + self.k
+    
+    
     
 
     def relocate(self, X, xbar, Z):
@@ -374,8 +380,8 @@ if __name__ == "__main__":
     
     
     # create a factor analysis model
-    S0 = UD.randomSubsphere(d,np.pi/4)
-    kappa = 20
+    S0 = UD.randomSubsphere(d,np.pi/6)
+    kappa = 100
     #kappa = None
     
     # sample from it
@@ -387,7 +393,21 @@ if __name__ == "__main__":
 
     
     
+    import matplotlib.pyplot as plt
+    from matplotlib.cm import get_cmap
     
+    #cmap = get_cmap('Spectral')
+    #cc = [cmap(s/ns) for s in labels]
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(*UD.sampleVMF(300).T, color='k', marker='.', label='uniform on unitsphere')
+    ax.scatter(*X.T, color='r', marker='.',label='data close to subsphere')
+    ax.scatter(*S.roundtrip(X).T, color='g', marker='.',label='learnt subsphere')
+    ax.set_xlim([-1,1])
+    ax.set_ylim([-1,1])
+    ax.set_zlim([-1,1])
+    ax.legend()
+    fig.show()    
     
     
     
