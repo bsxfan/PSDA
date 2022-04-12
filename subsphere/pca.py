@@ -248,7 +248,7 @@ class Subsphere(ConcentricSubsphere):
                      radii                         
                                         
         """
-        super().init(F)
+        super().__init__(F)
         if theta is None:
             k = c
             s, c = decompose(k)
@@ -339,7 +339,7 @@ def eccentricPCA(X, d, theta_init, niters=10, quiet = False, clamp_theta = False
         if clamp_theta:
             S = U.locate(X, xbar, Z, theta_init)
         else:            
-            S = S.relocate(X, Z)
+            S = S.relocate(X, xbar, Z)
         
     return S
 
@@ -348,15 +348,33 @@ def eccentricPCA(X, d, theta_init, niters=10, quiet = False, clamp_theta = False
 if __name__ == "__main__":
     
     
-    D, d = 256, 128
-    n = 2000
+    # D, d = 256, 128
+    # n = 2000
     
-    Ud = UnitSphere(d)
+    # Ud = UnitSphere(d)
+    # UD = UnitSphere(D)
+    
+    
+    # # create a factor analysis model
+    # S0 = UD.randomConcentricSubsphere(d)
+    # kappa = 20
+    # #kappa = None
+    
+    # # sample from it
+    # print('sampling')
+    # X = S0.sample(n, kappa)
+    
+    # print('\nPCA')
+    # S = concentricPCA(X,d)
+    
+    D, d = 3, 2
+    n = 200
+    
     UD = UnitSphere(D)
     
     
     # create a factor analysis model
-    S0 = UD.randomConcentricSubsphere(d)
+    S0 = UD.randomSubsphere(d,np.pi/4)
     kappa = 20
     #kappa = None
     
@@ -365,9 +383,7 @@ if __name__ == "__main__":
     X = S0.sample(n, kappa)
     
     print('\nPCA')
-    S = concentricPCA(X,d)
-    
-
+    S = eccentricPCA(X, d, 0.1, niters=10)
 
     
     
