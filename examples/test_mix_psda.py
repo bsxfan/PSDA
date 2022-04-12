@@ -4,25 +4,16 @@ import os,sys
 import numpy as np
 from numpy.random import randn, randint
 
-from matplotlib.cm import get_cmap
 import matplotlib.pyplot as plt
 
-import plotly.express as px
-
-# from psda.psda import VMF, PSDA, decompose, atleast2
 from pyllr import quick_eval
-
-
-import importlib
-import psda.mix_psda
-importlib.reload(psda.mix_psda)
 from psda.mix_psda import VMF, MixPSDA, decompose, atleast2
 
 rng = np.random.default_rng()
 
 
 
-def sample_psda(dim,ns,ntrain,ntest):
+def generate_psda(dim,ns,ntrain,ntest):
     from psda.psda import PSDA
 
     b, w = 50, 100  # within, between concentrations
@@ -57,7 +48,7 @@ def sample_psda(dim,ns,ntrain,ntest):
     return Xtrain, labels, Enroll, Test1, Test2
 
 
-def sample_mix_psda(m, dim,ns,ntrain,ntest):
+def generate_mix_psda(m, dim,ns,ntrain,ntest):
 
     p_i = np.ones(m)/m
     norm, mu = decompose(randn(m,dim))
@@ -113,14 +104,14 @@ def sample_mix_psda(m, dim,ns,ntrain,ntest):
 
 if __name__ == "__main__":
 
-    dim = 100
+    dim = 2
     ns = 500  # number of training speakers
     ntrain = 10000  # numer of training examples
     ntest = 10000
-    m = 1   # number of VMF components
+    m = 3   # number of VMF components
 
-    # Xtrain, labels, Enroll, Test1, Test2 = sample_psda(dim,ns,ntrain,ntest)
-    Xtrain, labels, Enroll, Test1, Test2 = sample_mix_psda(m,dim,ns,ntrain,ntest)
+    # Xtrain, labels, Enroll, Test1, Test2 = generate_psda(dim,ns,ntrain,ntest)
+    Xtrain, labels, Enroll, Test1, Test2 = generate_mix_psda(m,dim,ns,ntrain,ntest)
     uu, labels, counts = np.unique(labels, return_inverse=True, return_counts=True)
 
     onehot = labels[:,None] == uu
@@ -150,9 +141,6 @@ if __name__ == "__main__":
     # =================================================================
     # =================================================================
 
-
-    print('scoring single enroll')
-    # compute PSDA scores
     E = model.prep(Enroll)
     T1 = model.prep(Test1)
     T2 = model.prep(Test2)
@@ -190,17 +178,22 @@ if __name__ == "__main__":
 
 
     if 'plot' in sys.argv:
-        cmap = get_cmap('Spectral')
-        if dim == 2:
-            plt.figure()
-            for spk in np.unique(labels):
-                ii = labels==spk
-                for k in np.unique(component_labels[ii]):
-                    jj = np.logical_and(ii,component_labels==k)
-                    plt.scatter(Xtrain[jj][:,0],Xtrain[jj][:,1],color=cmap(spk/ns), marker="x^+o."[k%4])
+        cmap = plt.get_cmap('Spectral')
+        cc = [cmap(s/ns) for s in labels]
 
-            plt.scatter(*model.between.mu.T,color='r',marker="o")
-            plt.scatter(*model0.between.mu.T,color='k',marker="o")
+        plt.figure()
+
+        if dim == 2:
+            x,y = Xtrain.T
+            plt.scatter(x,y,color=cc,marker='o')
+            # for spk in np.unique(labels):
+            #     ii = labels==spk
+            #     for k in np.unique(component_labels[ii]):
+            #         jj = np.logical_and(ii,component_labels==k)
+            #         plt.scatter(Xtrain[jj][:,0],Xtrain[jj][:,1],color=cmap(spk/ns), marker="x^+o."[k%4])
+
+            for m in model.between.mu:
+                plt.arrow(0,0,*m,color='r')
             plt.axis('square')
             plt.xlim(-1.2,1.2)
             plt.ylim(-1.2,1.2)
@@ -209,16 +202,12 @@ if __name__ == "__main__":
 
         elif dim==3:
 
-            cmap = get_cmap('Spectral')
             cc = [cmap(s/ns) for s in labels]
             x,y,z = Xtrain.T
 
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
             ax.scatter(x,y,z,color=cc,marker='o')
-
-            for mi in mu:
-                ax.quiver(0,0,0,*mi,color='k')
 
             for mi in model.between.mu:
                 ax.quiver(0,0,0,*mi,color='r')
