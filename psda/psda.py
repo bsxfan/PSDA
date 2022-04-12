@@ -22,7 +22,6 @@ class PSDA:
                 w,b > 0
                 mu (dim, ) is a lengh-normalized speaker mean
 
-
                 or
 
         model = PSDA(w, VMF(mean))
@@ -163,9 +162,7 @@ class PSDA:
         obj = []
         for i in range(niters):
             psda, llh = psda.em_iter(means,counts,total)
-            if not quiet:
-                #print(f"em iter {i}: {llh}")
-                print(f"em iter {i}: {llh}","B =",psda.b, "W =",psda.w,"mu =",psda.between.mu.ravel())
+            if not quiet: print(f"em iter {i}: {llh}")
             obj.append(llh)
         return psda, obj
 
@@ -180,7 +177,8 @@ class PSDA:
             marginal log-likelihood (em objective)
         """
         zpost = self.zposterior(compose(counts,means))
-        llh = self.logCw*total + self.logCb - zpost.logCk.sum()
+        nspk = len(counts)
+        llh = self.logCw*total + self.logCb*nspk - zpost.logCk.sum()
 
         z_exp = zpost.mean()
         zbar = z_exp.mean(axis=0)
