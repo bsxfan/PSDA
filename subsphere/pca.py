@@ -100,22 +100,60 @@ class UnitSphere:
         n, D = X.shape
         assert D == self.D
         nz, d = Z.shape
-        assert 2 <= d < D and n==nz
+        assert 1 <= d < D and n==nz
         
         F = retract(X.T @ Z)    # (D,d)
         return ConcentricSubsphere(F)
     
+    def locate(self, X, xbar, Z, theta):
+        """
+        This is a generalization of align. 
+        
+        Given data and temporarily fixed Z and theta, it updates F and c and
+        returns a new Subsphere, with the given theta and the updated F, c.    
+        """
+        n, D = X.shape
+        assert D == self.D
+        nz, d = Z.shape
+        assert 1 <= d < D and n==nz
+        
+        Rbar = (X.T@Z)/n  #(D,d)
+        r, s = np.cos(theta), np.sin(theta)
+        Fbrev = retract(np.hstack([r*Rbar,s*xbar.reshape(-1,1)]))
+        F, c = Fbrev[:,:-1], Fbrev[:,-1]
+        return Subsphere(F, c, theta)
     
     
     
     
     
     def randomConcentricSubsphere(self, d):
+        """
+        d: the new subsphere dimension is d-1
+        """
         D = self.D
         assert 1 <= d < D
         F = retract(randn(D,d))
         return ConcentricSubsphere(F)
         
+
+    def randomSubsphere(self, d, theta=0):
+        """
+        d: the new subsphere dimension is d-1
+        
+        theta: angle between radii of the embedding unitsphere and the 
+               new subsphere
+
+        """
+        if theta==0: return self.randomConcentricSubsphere(d)
+        D = self.D
+        assert 1 <= d < D
+        Fbrev = retract(randn(D,d+1))
+        F, c = Fbrev[:,:-1], Fbrev[:,-1]
+        return Subsphere(F, c, theta)
+
+
+
 
     def sampleVMF(self, n_or_mu, kappa = 0):
         """
@@ -247,7 +285,7 @@ class Subsphere(ConcentricSubsphere):
         returns a new Subsphere, with the updated values    
         """
         Rbar = (X.T@Z)/X.shape[0]  #(D,d)
-        theta = np.atan2(self.c@xbar, (self.F*Rbar).sum())
+        theta = np.arctan2(self.c@xbar, (self.F*Rbar).sum())
         r, s = np.cos(theta), np.sin(theta)
         D,d = Rbar.shape
         Fbrev = retract(np.hstack([r*Rbar,s*xbar.reshape(-1,1)]))
@@ -258,9 +296,9 @@ class Subsphere(ConcentricSubsphere):
 
 
     
-def PCA(X, d, niters=10, quiet = False):
+def concentricPCA(X, d, niters=10, quiet = False):
     n,D = X.shape
-    assert 2 <= d < D
+    assert 1 <= d < D
     U = UnitSphere(D)
 
     #S = U.randomConcentricSubsphere(d)   # this works too
@@ -278,6 +316,33 @@ def PCA(X, d, niters=10, quiet = False):
         S = U.align(X, Z)
         
     return S
+
+
+def eccentricPCA(X, d, theta_init, niters=10, quiet = False, clamp_theta = False):
+    n,D = X.shape
+    assert 1 <= d < D
+    U = UnitSphere(D)
+    xbar = X.mean(axis=0)
+    
+    #S = U.randomSubsphere(d)   # this may work too
+    Z = lengthnorm(randn(n, d))
+    S = U.locate(X, xbar, Z, theta_init)
+
+    for i in range(niters):
+        Z = S.project(X)
+        
+        if not quiet:
+            Y = S.represent(Z)
+            obj = (X*Y).sum() / n
+            print(f"PCA {i}: {obj}")
+        
+        if clamp_theta:
+            S = U.locate(X, xbar, Z, theta_init)
+        else:            
+            S = S.relocate(X, Z)
+        
+    return S
+
 
 
 if __name__ == "__main__":
@@ -300,7 +365,7 @@ if __name__ == "__main__":
     X = S0.sample(n, kappa)
     
     print('\nPCA')
-    S = PCA(X,d)
+    S = concentricPCA(X,d)
     
 
 
