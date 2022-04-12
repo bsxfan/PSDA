@@ -147,8 +147,6 @@ if __name__ == "__main__":
     #model1 = model0
     model, obj = MixPSDA.em(means, counts, niters=20, w0=None, psda_init=model1)
 
-    #print(f"true     : 0","B =",b, "W =",w,"mu =",mu.ravel()[:6])
-
     # =================================================================
     # =================================================================
 
@@ -193,7 +191,6 @@ if __name__ == "__main__":
 
     if 'plot' in sys.argv:
         cmap = get_cmap('Spectral')
-        # colors = "rgbcmyk"
         if dim == 2:
             plt.figure()
             for spk in np.unique(labels):
@@ -208,33 +205,13 @@ if __name__ == "__main__":
             plt.xlim(-1.2,1.2)
             plt.ylim(-1.2,1.2)
             plt.grid()
-            #plt.title('Embeddings')
             plt.show()
 
         elif dim==3:
 
             cmap = get_cmap('Spectral')
-
             cc = [cmap(s/ns) for s in labels]
-            ss = ["so>^+s"[k] for k in component_labels]
-            sz = [0.1 for s in labels]
             x,y,z = Xtrain.T
-
-            # fig = px.scatter_3d(x=x,y=y,z=z,color=cc,symbol=ss,size=sz)
-
-            # fig.update_traces(marker=dict(size=5,line=dict(width=2,color='DarkSlateGrey')),
-            #                   selector=dict(mode='markers'))
-
-            # # for k in np.unique(component_labels):
-            # #     # for sidx,spk in enumerate(np.unique(labels)):
-            # #     #     ii = np.logical_and(labels==spk,component_labels==k)
-            # #     ii = component_labels==k
-            # #     x,y,z = Xtrain[ii].T
-            # #     s = ["so>^+"[k] for i in range(ii.sum())]
-            # #     #c = [cmap(sidx/ns) for i in range(ii.sum())]
-            # #     fig = px.scatter_3d(x=x,y=y,z=z,symbol=s)
-            # fig.show()
-
 
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
