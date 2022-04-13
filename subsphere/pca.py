@@ -142,7 +142,14 @@ class UnitSphere:
         d: the new subsphere dimension is d-1
         
         theta: angle between radii of the embedding unitsphere and the 
-               new subsphere
+               new subsphere. Also cos(theta) is the subsphere radius and 
+               sin(theta) is the distance between the unitsphere and subsphere 
+               centers.
+               
+               If the subsphere is a circle of constant latitude (e.g. equator, 
+               polar circle), then theta is the latitude (e.g. 0 for the 
+               equator). 
+               
 
         """
         if theta==0: return self.randomConcentricSubsphere(d)
@@ -171,10 +178,14 @@ class UnitSphere:
             assert D == self.D
             return VMF(mu, kappa).sample()
         
+
+class Globe(UnitSphere):
+    def __init__(self):
+        super().__init__(3)
         
         
-    def latitude(self,lat,long=None):
-        assert self.D == 3
+    @classmethod
+    def latitude(cls,lat,long=None):
         c = np.array([0,0,1.0])
         F = np.vstack([np.eye(2),np.zeros(2)])
         S = Subsphere(F, c, lat)               
@@ -185,8 +196,8 @@ class UnitSphere:
         return S.represent(Z)
 
         
-    def meridian(self,long,lat=None):
-        assert self.D == 3
+    @classmethod
+    def meridian(cls,long,lat=None):
         F = np.vstack(([np.cos(long),np.sin(long),0],[0,0,1])).T
         S = ConcentricSubsphere(F)               
         if lat is None: return S
@@ -196,8 +207,8 @@ class UnitSphere:
         return S.represent(Z)
 
 
-    def globe(self, ax, fine=True):
-        assert self.D == 3
+    @classmethod
+    def plotgrid(cls, ax, fine=True):
         ax.grid(False)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -209,9 +220,9 @@ class UnitSphere:
             lat = np.array([-60,-30,0,30,60])*np.pi/180
             long = np.array([0,30,60,90,120,150])*np.pi/180
         for lati in lat:
-            ax.plot(*self.latitude(lati,100).T,color='gray')
+            ax.plot(*cls.latitude(lati,100).T,color='gray')
         for longi in long:
-            ax.plot(*self.meridian(longi,100).T,color='gray')
+            ax.plot(*cls.meridian(longi,100).T,color='gray')
         
 
         
@@ -442,12 +453,10 @@ if __name__ == "__main__":
     #cc = [cmap(s/ns) for s in labels]
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
+    Globe.plotgrid(ax)
     # ax.scatter(*UD.sampleVMF(300).T, color='k', marker='.', label='uniform on unitsphere')
-    UD.globe(ax)
     ax.scatter(*X.T, color='r', marker='.',label='data close to subsphere')
     ax.scatter(*S.roundtrip(X).T, color='g', marker='.',label='learnt subsphere')
-    # ax.plot(*UD.latitude(0,100).T,label='equator',color='gray')
-    # ax.plot(*UD.meridian(0,100).T,label='Greenwich')
     ax.set_xlim([-1,1])
     ax.set_ylim([-1,1])
     ax.set_zlim([-1,1])
