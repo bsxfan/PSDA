@@ -14,8 +14,9 @@ class ModelA:
         self.W, self.B = F[:,:wdim], F[:,wdim:]
         
         self.zprior = VMF(zdim)  # uniform
-        muw = np.zeros(wdim+1)   # 1 signal weight, and wdim noise weights
-        muw[0] = 1
+        # muw = np.zeros(wdim+1)   # 1 signal weight, and wdim noise weights
+        # muw[0] = 1
+        muw = retract(np.ones(wdim+1))
         self.wprior = VMF(muw,kappaw)  # concentrates at low noise state
         
         
@@ -42,7 +43,7 @@ if __name__ == "__main__":
     ns = 8 
     n = 50
     labels = np.arange(ns).repeat(n)
-    model = ModelA(1,2,100,1000)
+    model = ModelA(1,2,20,1000)
     
     # Z = model.sample_speakers(ns)
     theta = np.linspace(0,ns/(ns+1)*2*np.pi,ns)
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     ax = fig.add_subplot(111, projection='3d')
     Globe.plotgrid(ax)
     ax.scatter(*X.T, color='b', marker='.',label='embeddings')
-    ax.scatter(*Mu.T, color='r', marker='.',label='speakers')
+    ax.scatter(*Mu.T, color='r', marker='o',label='speakers')
     ax.set_xlim([-1,1])
     ax.set_ylim([-1,1])
     ax.set_zlim([-1,1])
