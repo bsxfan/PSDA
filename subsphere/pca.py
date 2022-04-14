@@ -35,6 +35,9 @@ def retract_eigh(R):
         
     output: F (D,d), such that F'F = I_d 
     
+            If d = D, then F is orthogonal and we have: 
+                F' = inv(F), so that also FF' = I_d 
+    
     
     This method is the fastest of the retract methods in this module.
     
@@ -49,7 +52,7 @@ def retract_svd(R):
     The result is mathematically equivalent to retract_eigh(R). See the 
     documentation for that function.
     
-    This method is about 2x slower that retract_eigh, when using the default 
+    This method is usually slower that retract_eigh, when using the default 
     scipy eigh and svd. Nevertheless, it is attractive becasue of its relative
     simplicity and more direct computation. If we ever need to autodiff backprop 
     through this function, it is possible this one may be preferable ...
@@ -73,13 +76,31 @@ def retract_sqrtm(R):
 retract = retract_eigh
 
 
+def randStiefel(D,d):
+    return retract(randn(D,d))
+
+def randorth(D):
+    return randStiefel(D,D)
+
+
+
 class UnitSphere:
-    def __init__(self, D):
+    def __init__(self, d):
         """
-        D is the enclosing Euclidean dimension. The sphere has dimension D-1
+        d is the enclosing Euclidean dimension. The sphere has dimension d-1
         """
-        self.D = D
+        self.d = d
         
+    def __repr__(self):
+        name = type(self).__name__
+        return f"{name} in R^{self.d}"
+        
+    def subsphere(self,F,c=None,theta=None):
+        if c is None:
+            assert theta is None
+            return ConcentricSubsphere(self,F)
+        return Subsphere(self, F, c, theta)    
+    
         
         
     def align(self, X, Z):
@@ -98,12 +119,12 @@ class UnitSphere:
         
         """
         n, D = X.shape
-        assert D == self.D
+        assert D == self.d
         nz, d = Z.shape
         assert 1 <= d < D and n==nz
         
         F = retract(X.T @ Z)    # (D,d)
-        return ConcentricSubsphere(F)
+        return self.subsphere(F)
     
     def locate(self, X, xbar, Z, theta):
         """
@@ -113,7 +134,7 @@ class UnitSphere:
         returns a new Subsphere, with the given theta and the updated F, c.    
         """
         n, D = X.shape
-        assert D == self.D
+        assert D == self.d
         nz, d = Z.shape
         assert 1 <= d < D and n==nz
         
@@ -121,7 +142,7 @@ class UnitSphere:
         r, s = np.cos(theta), np.sin(theta)
         Fbrev = retract(np.hstack([r*Rbar,s*xbar.reshape(-1,1)]))
         F, c = Fbrev[:,:-1], Fbrev[:,-1]
-        return Subsphere(F, c, theta)
+        return self.subsphere(F, c, theta)
     
     
     
@@ -131,10 +152,9 @@ class UnitSphere:
         """
         d: the new subsphere dimension is d-1
         """
-        D = self.D
-        assert 1 <= d < D
-        F = retract(randn(D,d))
-        return ConcentricSubsphere(F)
+        D = self.d
+        assert 1 <= d <= D
+        return self.subsphere(randStiefel(D,d))
         
 
     def randomSubsphere(self, d, theta=0):
@@ -153,29 +173,29 @@ class UnitSphere:
 
         """
         if theta==0: return self.randomConcentricSubsphere(d)
-        D = self.D
+        D = self.d
         assert 1 <= d < D
-        Fbrev = retract(randn(D,d+1))
+        Fbrev = randStiefel(D,d+1)
         F, c = Fbrev[:,:-1], Fbrev[:,-1]
-        return Subsphere(F, c, theta)
+        return self.subsphere(F, c, theta)
 
 
 
 
     def sampleVMF(self, n_or_mu, kappa = 0):
         """
-        sampleVMF(n) returns n uniform samples in S^{D-1}
+        sampleVMF(n) returns n uniform samples in S^{d-1}
         sampleVMF(mu, kappa) returns one sample for every row of mu
         """
         
         if np.isscalar(n_or_mu):
             n = n_or_mu
             assert kappa == 0
-            return VMF(self.D).sample(n)
+            return VMF(self.d).sample(n)
         else:
             mu = n_or_mu
-            D = mu.shape[-1]
-            assert D == self.D
+            d = mu.shape[-1]
+            assert d == self.d
             return VMF(mu, kappa).sample()
         
 
@@ -188,7 +208,7 @@ class Globe(UnitSphere):
     def latitude(cls,lat,long=None):
         c = np.array([0,0,1.0])
         F = np.vstack([np.eye(2),np.zeros(2)])
-        S = Subsphere(F, c, lat)               
+        S = cls().subsphere(F, c, lat)               
         if long is None: return S
         if np.isscalar(long):
             long = np.linspace(0,2*np.pi,long)
@@ -199,7 +219,7 @@ class Globe(UnitSphere):
     @classmethod
     def meridian(cls,long,lat=None):
         F = np.vstack(([np.cos(long),np.sin(long),0],[0,0,1])).T
-        S = ConcentricSubsphere(F)               
+        S = cls().subsphere(F)               
         if lat is None: return S
         if np.isscalar(lat):
             lat = np.linspace(0,2*np.pi,lat)
@@ -227,28 +247,64 @@ class Globe(UnitSphere):
 
         
         
-class ConcentricSubsphere:
-    def __init__(self, F):
+class ConcentricSubsphere(UnitSphere):
+    """
+    Objects of this class have a dual nature. They are: 
+        : (d-1)-dimensional Unitspheres
+        : and subspheres of the emclosing (parent) (D-1)-dimensional Unitsphere
+    These two spaces are isomorphic: length and angles are preserved by the
+    bijection x = F z, with inverse z = F' x. (This linear map is only a 
+    bijection if the domain and codomain are the respective spheres noted above.)                                   
+
+    When this class is seen as a UnitSphere, it is the (d-1)-dimensional one
+    where z lives. When seen as a ConcentricSubsphere, it is the (d-1)-dim 
+    embedded subsphere where x lives. 
+    
+    The attribute self.UD refers to the enclosing (D-1)-dim Unitsphere (x lives 
+    in a subspace of it.)
+    
+    The attribute self.Ud = self refers to the (d-1)-dim Unitsphere, where z
+    lives.
+                                                          
+                                                          
+                                                          
+    
+    """
+    def __init__(self, parent, F):
         """
         F: (D,d), with 2 <= d < D and F'F = I_d
            F determines the orientation of the subsphere 
         """
+        D, d = F.shape
+        assert D == parent.d and 1 <= d <= D
+        super().__init__(d)   # sets self.d = d
         self.F = F
-        self.D, self.d = D, d = F.shape
-        self.Ud = UnitSphere(d)
-        self.UD = UnitSphere(D)
+        self.D = D
+        self.Ud = self
+        self.UD = parent
+
+    def __repr__(self):
+        name = type(self).__name__
+        D, d = self.D, self.d
+        return f"{name}: UnitSphere in R^{d}, also embedded in UnitSphere in R^{D}"
 
 
 
     def project(self, X):
         """
-        project D-dimensional data from the enclosing unitpshere onto this 
-        subsphere
+        Project D-dimensional data from the enclosing unitpshere onto this 
+        subsphere. A representation in the (d-1)-dim Unitshpere is returned. 
         
-        X: (n,D), or (D,)
+        Input: X: (n,D), or (D,)
+        Output: Z(n,D), or (d,), length-normalized
+        
+        
+        
         """
+        assert X.shape[-1] == self.D
         F = self.F  # (D,d)        
-        return lengthnorm(X @ F)
+        Z = lengthnorm(X @ F)
+        return Z
         
     
     def represent(self,Z):
@@ -261,7 +317,7 @@ class ConcentricSubsphere:
             Z: (n,d), or (d,), length-normalized
             
             
-        Output: (n,D), or (D,) length-normalized    
+        Output: X (n,D), or (D,) length-normalized    
         """
         F = self.F  # (D,d) 
         return Z @ F.T
@@ -271,9 +327,9 @@ class ConcentricSubsphere:
 
 
     
-    def sample(self, n, kappa=None):
+    def sample(self, n, kappa=np.inf):
         """
-        If kappa is None: generate n samples on the subsphere
+        If kappa is infinite: generate n samples, exactly on the subsphere
         
         If kappa > 0: genarate n samples on the subsphere and then replace 
                       each sample, s, with a sample from VMF(s, kappa).
@@ -281,9 +337,10 @@ class ConcentricSubsphere:
         """
         Ud, UD = self.Ud, self.UD
         Z = Ud.sampleVMF(n)
-        Y = self.represent(Z)
-        if kappa is None: return Y
-        return UD.sampleVMF(Y,kappa)
+        X = self.represent(Z)
+        if np.isfinite(kappa):
+            X = UD.sampleVMF(X,kappa)
+        return X    
         
     
 class Subsphere(ConcentricSubsphere):
@@ -291,7 +348,7 @@ class Subsphere(ConcentricSubsphere):
     Generalization of ConcentricSubsphere to allow a subsphere center away from 
     the enclosing unitsphere center and a subsphere radius of less than one. 
     """
-    def __init__(self,F,c,theta=None):
+    def __init__(self,parent, F,c,theta=None):
         """
         F: (D,d) with orhtonormal columns, orientatio matrix
         c: (D,) c'c=1, unit direction vector of subsphere center
@@ -305,7 +362,7 @@ class Subsphere(ConcentricSubsphere):
                      radii                         
                                         
         """
-        super().__init__(F)
+        super().__init__(parent, F)
         if theta is None:
             k = c
             s, c = decompose(k)
@@ -344,12 +401,13 @@ class Subsphere(ConcentricSubsphere):
         returns a new Subsphere, with the updated values    
         """
         Rbar = (X.T@Z)/X.shape[0]  #(D,d)
-        theta = np.arctan2(self.c@xbar, (self.F*Rbar).sum())
+        F, c = self.F, self.c
+        assert F.shape == Rbar.shape
+        theta = np.arctan2(c@xbar, (F*Rbar).sum())
         r, s = np.cos(theta), np.sin(theta)
-        D,d = Rbar.shape
         Fbrev = retract(np.hstack([r*Rbar,s*xbar.reshape(-1,1)]))
         F, c = Fbrev[:,:-1], Fbrev[:,-1]
-        return Subsphere(F, c, theta)
+        return self.UD.subsphere(F, c, theta)
 
 
 
@@ -402,6 +460,77 @@ def eccentricPCA(X, d, theta_init, niters=10, quiet = False, clamp_theta = False
         
     return S
 
+
+class LinearSubspace:
+    def __init__(self,F):
+        """
+        Input: 
+            
+           F: (D,d), D >= d is a representative of the subspace, which is 
+              spanned by the columns of F. F must be of full rank (=d), i.e. 
+              its columns must be linearly independent.
+           
+        After construction, self.F will have orthonormal columns: F.T@F = I 
+
+           
+        """
+        if F.ndim==1: F = F.reshape(-1,1)
+        self.D, self.d = D,d = F.shape
+        assert 1 <= d <= D
+        self.F = retract(F)
+
+    @classmethod
+    def random(cls,D,d):
+        return cls(randn(D,d))
+
+
+    def compare(self, that=None):
+        """
+        Compares this subspace with another. 
+        
+        The compared subspaces must agree in the dimension of the enclosing 
+        space, but need not agree in their own dimension. 
+        
+        The result is the (soft) number of dimensions in which they agree.
+        - self.compare(self) is self.d  i.e. own dimension, the maximum
+        - comparison between orthogonal subspaces gives 0, the minimum
+        
+        If G is a subspace of F, then F.compare(G) = G.d
+        
+        The comparison is symmetric and is also invariant to orthogonal 
+        transforms of the subspace representative, self.F. In fact, if 
+        self.d = that.d, the comparison returns:
+
+            max_{U,V} = trace[ (self.F @ U).T @ (that.F @ V) ]
+        
+        where U,V are orthogonal of appropriate sizes. No explicit search for 
+        U, V is required. The solution is given by SVD of the of the (small)
+        product:
+        
+            self.compare(that) = sum_of_singular_values (self.F.T @ that.F)
+        
+        
+        
+        """
+        assert self.D == that.D
+        if that is None: return self.d
+        R = self.F.T @ that.F
+        s = svd(R,compute_uv=False)
+        return s.sum()
+    
+    
+
+
+    def __matmul__(self,M):
+        return type(self)(self.F @ M)
+
+
+    def __getitem__(self,args):
+        return type(self)(self.F.__getitem__(args))
+    
+    
+    def __repr__(self):
+        return "LinearSubspace represented by:\n" + str(self.F)
 
 
 if __name__ == "__main__":
