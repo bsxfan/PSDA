@@ -51,11 +51,29 @@ class ScoreStats:
                           self.scoresum + that.scoresum,
                           self.sqscoresum + that.sqscoresum)
     
+    def __sub__(self,that):
+        return ScoreStats(self.nscores - that.nscores,
+                          self.scoresum - that.scoresum,
+                          self.sqscoresum - that.sqscoresum)
 
     def __repr__(self):
         return f"ScoreStats({self.nscores}, {self.scoresum}, {self.sqscoresum})"        
     
-    
+
+
+def score_analysis(X, labels):
+    tar = ScoreStats(0,0,0)
+    for i in np.unique(labels):
+        tar = tar + score(X[labels==i,:])
+    mixed = score(X)
+    non = mixed - tar
+    return tar, non
+
+
+def dprime(tar: ScoreStats, non:ScoreStats):
+    std = np.sqrt((tar.scatter()+non.scatter())/2)
+    return (tar.mean() - non.mean()) / std 
+
     
     
 if __name__ == "__main__":
