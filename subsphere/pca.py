@@ -512,8 +512,8 @@ class LinearSubspace:
         
         
         """
-        assert self.D == that.D
         if that is None: return self.d
+        assert self.D == that.D
         R = self.F.T @ that.F
         s = svd(R,compute_uv=False)
         return s.sum()

@@ -43,7 +43,7 @@ if __name__ == "__main__":
     ns = 3
     n = 200
     labels = np.arange(ns).repeat(n)
-    model = ModelA(1,2,0,10000)
+    model = ModelA(1,2,20,1000)
     
     # Z = model.sample_speakers(ns)
     theta = np.linspace(0,ns/(ns+1)*2*np.pi,ns)
