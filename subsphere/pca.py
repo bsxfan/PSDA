@@ -240,9 +240,9 @@ class Globe(UnitSphere):
             lat = np.array([-60,-30,0,30,60])*np.pi/180
             long = np.array([0,30,60,90,120,150])*np.pi/180
         for lati in lat:
-            ax.plot(*cls.latitude(lati,100).T,color='gray')
+            ax.plot(*cls.latitude(lati,100).T,color='gray',linewidth=0.25)
         for longi in long:
-            ax.plot(*cls.meridian(longi,100).T,color='gray')
+            ax.plot(*cls.meridian(longi,100).T,color='gray',linewidth=0.25)
         
 
         
