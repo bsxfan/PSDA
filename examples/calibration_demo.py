@@ -2,7 +2,7 @@ import numpy as np
 from numpy.random import randn, randint
 import matplotlib.pyplot as plt
 
-from psda.psda import VMF, PSDA, decompose, atleast2
+from psda.psdamodel import VMF, PSDA, decompose, atleast2
 from pyllr import quick_eval
 from psda.vmf_sampler import sample_uniform
 
