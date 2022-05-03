@@ -8,6 +8,8 @@ from psda.vmf_sampler import rotate_to_mu, sample_vmf_canonical_mu, sample_unifo
 from psda.besseli import LogBesselI, fast_logrho, fastLogCvmf_e, k_and_logk
 
 
+from scipy.special import expit as sigmoid
+
 # def logfactorial(x):
 #     """
 #     Natural log of factorial. Invokes scipy.special.gammaln.
@@ -154,11 +156,17 @@ def compose(norm,mu):
     if not np.isscalar(norm): norm = norm.reshape(-1,1)
     return norm*mu
 
+
+
+            
+        
+        
+
 class VMF:
     """
     Von Mises-Fisher distribution. The parameters are supplied at construction. 
     """
-    def __init__(self, mu=None, k = None, logC = None):
+    def __init__(self, mu, k = None, logC = None):
         """
         mu: (dim, ): mean direction, must be lengh-normalized.
             
@@ -180,12 +188,12 @@ class VMF:
                    supplied to save memory and compute. 
         
         """
-        if np.isscalar(mu):  # dim <- mu, k <- 0
+        if np.isscalar(mu):  # dim <-- mu, k <-- 0
             k = 0.0
             mu = sample_uniform(mu)
         if k is None:
             kmu = mu
-            k, mu = decompose(mu)
+            k, mu = decompose(kmu)
         else:
             kmu = compose(k, mu)
         self.mu = mu
@@ -355,7 +363,7 @@ class VMF:
     def __repr__(self):
         if np.isscalar(self.k):
             return f"VMF(mu:{self.mu.shape}, k={self.k})"
-        return f"VMF(mean:{self.mean.shape}, k:{self.k.shape})"
+        return f"VMF(mu:{self.mu.shape}, k:{self.k.shape})"
 
     
 if __name__ == "__main__":
