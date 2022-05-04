@@ -128,7 +128,64 @@ class ToroidalPSDA:
             v.append(sample_uniform(di))
             at += di
         return cls(kappa,m,w,K,gamma,v)    
+    
+class Embedding:
+    def __init__(self,w,K):
+
+        assert len(w) == len(K)
+        self.n = len(w)
+
+        self.D = D = K[0].shape[0]
+        assert all([Ki.shape[0]==D for Ki in K])
+
+        self.w = w
+        self.K = K
         
+        self.d = d = np.array([Ki.shape[1] for Ki in K])
+        self.T = d.sum()
+        
+    def stack(self):
+        return np.hstack([self.K])    
+    
+    def wstack(self):
+        return np.hstack([wi*Ki for wi,Ki in zip(self.w,self.K)])
+
+    @classmethod
+    def unstack(cls,F,d):
+        return np.hsplit(F,d.cumsum()[:-1])
+    
+    @classmethod
+    def random(cls,w,D,d):
+        assert len(d) == len(w)
+        T = d.sum()
+        assert T <= D
+        w = lengthnorm(w)
+        K = cls.unstack(randStiefel(D,T),d)
+        return cls(w,K)
+    
+    
+class Prior:
+    def __init__(self,gamma,v):
+        self.d = d = np.array([len(vi) for vi in v])
+        logCd = {di:logNormConst(di) for di in np.unique(d)}
+        self.vmf = [vmf(logCd[di],vi,gammai) \
+                    for di,gammai, vi in zip(d,gamma,v)]
+        self.gamma_v = np.hstack([gammai*vi for gammai,vi in zip(gamma,v)])    
+
+    def sample(self,n):
+        return np.hstack([vmfi.sample(n) for vmfi in self.vmf])
+
+    
+    
+class Posterior:
+    def __init__(self, prior, stats):
+        stats = stats + prior.gamma_v
+        s = prior.d.cumsum()[:-1]
+        stats = np.hsplit(stats,s)
+        self.vmf = [vmf(prior.vmf[i].logC,statsi) \
+                    for i, statsi in enumerate(stats)]
+        self.means = [vmfi.mean() for vmfi in self.vmf]
+        self.mean = np.hstack(self.means)
         
 if __name__ == "__main__":
 
