@@ -8,7 +8,9 @@ from psda.vmf_onedim import vmf, logNormConst
 class ToroidalPSDA:
     def __init__(self, kappa, m, w, K, gamma, v):
         assert len(w) == len(K) == len(gamma) == len(v)
+        
         self.kappa = kappa
+        self.logCD = logNormConst(D)
         
         self.D = K[0].shape[0]
         self.n = n = len(K)
@@ -19,7 +21,7 @@ class ToroidalPSDA:
 
 
         if m>0:
-            self.Ez = Ez = Embedding(w[:m],K[:m])
+            self.Ez = Embedding(w[:m],K[:m])
             self.zprior = Prior(gamma[:m],v[:m])
         else:
             self.zprior = None
@@ -27,7 +29,7 @@ class ToroidalPSDA:
 
 
         if m<n:
-            self.Ey = Ey = Embedding(w[m:],K[m:])
+            self.Ey = Embedding(w[m:],K[m:])
             self.yprior = Prior(gamma[m:],v[m:])
         else:
             self.yprior = None
@@ -72,12 +74,11 @@ class ToroidalPSDA:
     
     @classmethod
     def random(cls, D, d, w, kappa, gamma_z = None, gamma_y = None):
+        assert gamma_z is not None or gamma_y is not None
         if gamma_z is None:
-            assert gamma_y is not None
             gamma = gamma_y
             m = 0
         elif gamma_y is None:
-            assert gamma_z is not None
             gamma = gamma_z
             m = len(gamma)
         else:
@@ -85,18 +86,11 @@ class ToroidalPSDA:
             m = len(gamma_z)
         n = len(gamma)    
         assert len(d) == n
-        T = d.sum()
-        assert T <= D
-        F = randStiefel(D,T)
-        w = lengthnorm(w)
-        K = []
-        v = []
-        at = 0
-        for di in d:
-            K.append(F[:,at:at+di])
-            v.append(sample_uniform(di))
-            at += di
-        return cls(kappa,m,w,K,gamma,v)    
+        v = [sample_uniform(di) for di in d]
+        E = Embedding.random(w,D,d)
+        return cls(kappa,m,E.w,E.K,gamma,v)    
+        
+        
     
 class Embedding:
     def __init__(self,w,K):
