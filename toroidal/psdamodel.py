@@ -7,93 +7,62 @@ from psda.vmf_onedim import vmf, logNormConst
 
 class ToroidalPSDA:
     def __init__(self, kappa, m, w, K, gamma, v):
+        assert len(w) == len(K) == len(gamma) == len(v)
         self.kappa = kappa
-        self.w = w
-        self.K = K
-        self.gamma = gamma
-        self.v = v
         
-        self.D = D = K[0].shape[0]
+        self.D = K[0].shape[0]
         self.n = n = len(K)
         self.m = m
         assert 0 <= m <= n
-        self.d = d = np.array([Ki.shape[1] for Ki in K])
-        self.T = T = d.sum()
-        self.Tz = Tz = d[:m].sum()
-        self.Ty = Ty = d[m:].sum()
-        assert T <= D
-        self.F = F = np.zeros((D,T))
-        at = 0
-        for Ki in K:
-            Di, di = Ki.shape
-            assert Di == D
-            F[:,at:at+di] = Ki
-            at += di
-            
+        
+        self.E = Embedding(w,K)
+
+
         if m>0:
-            self.Lz = Lz = np.zeros((D,Tz))
-            at = 0
-            for Ki, wi in zip(K[:m],w[:m]):
-                Di, di = Ki.shape
-                Lz[:,at:at+di] = wi*Ki
-                at += di
+            self.Ez = Ez = Embedding(w[:m],K[:m])
+            self.zprior = Prior(gamma[:m],v[:m])
+        else:
+            self.zprior = None
+            self.Ez = None
+
 
         if m<n:
-            self.Ly = Ly = np.zeros((D,Ty))
-            at = 0
-            for Ki, wi in zip(K[m:],w[m:]):
-                Di, di = Ki.shape
-                Ly[:,at:at+di] = wi*Ki
-                at += di
-
-
-            
-        self.logCD = logNormConst(D)    
-        logCd = {di:logNormConst(di) for di in np.unique(d)}
-        self.prior = prior = [vmf(logCd[len(vi)],vi,gammai) \
-                              for gammai, vi in zip(gamma,v)]
-        self.zprior = prior[:m]    
-        self.yprior = prior[m:]    
+            self.Ey = Ey = Embedding(w[m:],K[m:])
+            self.yprior = Prior(gamma[m:],v[m:])
+        else:
+            self.yprior = None
+            self.Ey = None
+        
+        
+        
             
             
     def sample_speakers(self,n):
-        assert self.m > 0, "this model has no speaker factors"
-        Tz = self.Tz
-        Z = np.zeros((n, Tz))
-        at = 0
-        for vmfi in self.zprior:
-            di = vmfi.dim
-            Z[:,at:at+di] = vmfi.sample(n)
-            at += di
+        assert self.zprior is not None, "this model has no speaker factors"
+        Z = self.zprior.sample(n)
         return Z
 
     def sample_channels(self,n):
-        Ty = self.Ty
-        if Ty == 0: return None     # no channel factors
-        Y = np.zeros((n, Ty))
-        at = 0
-        for vmfi in self.yprior:
-            di = vmfi.dim
-            Y[:,at:at+di] = vmfi.sample(n)
-            at += di
+        if self.yprior is None: return None
+        Y = self.yprior.sample(n)
         return Y
      
     def sample(self, Z_or_n, labels = None, kappa = None, return_mu = False):
         if self.m > 0:
             Z = Z_or_n
             ns,Tz = Z.shape
-            assert Tz == self.Tz
-            Z = Z @ self.Lz.T
+            assert Tz == self.Ez.T
+            Z = self.Ez.embed(Z)
             if labels is not None: 
                 Z = Z[labels,:]
             n = Z.shape[0]    
-            Y = self.sample_channels(n) @ self.Ly.T
-            Mu = Z if Y is None else Z + Y
+            Y = self.sample_channels(n)
+            Mu = Z if Y is None else Z + self.Ey.embed(Y)
         else:  # m = 0
             assert labels is None
             assert np.isscalar(Z_or_n)
             n = Z_or_n
-            Mu = self.sample_channels(n) @ self.Ly.T
+            Mu = self.Ey.embed(self.sample_channels(n))
         if kappa is None: kappa = self.kappa
         X = Mu if np.isinf(kappa) else vmf(self.logCD, Mu,self.kappa).sample()    
         if not return_mu: return X
@@ -144,6 +113,16 @@ class Embedding:
         self.d = d = np.array([Ki.shape[1] for Ki in K])
         self.T = d.sum()
         
+        self.L = self.wstack()
+        
+        
+    def embed(self,Z):
+        X =  Z @ self.L.T 
+        return X
+        
+    def project(self,X):
+        return X @ self.L
+        
     def stack(self):
         return np.hstack([self.K])    
     
@@ -179,13 +158,15 @@ class Prior:
     
 class Posterior:
     def __init__(self, prior, stats):
-        stats = stats + prior.gamma_v
+        self.stats = stats + prior.gamma_v
         s = prior.d.cumsum()[:-1]
         stats = np.hsplit(stats,s)
         self.vmf = [vmf(prior.vmf[i].logC,statsi) \
                     for i, statsi in enumerate(stats)]
-        self.means = [vmfi.mean() for vmfi in self.vmf]
-        self.mean = np.hstack(self.means)
+        means = [vmfi.mean() for vmfi in self.vmf]
+        self.mean = np.hstack(means)
+        
+        
         
 if __name__ == "__main__":
 
