@@ -5,6 +5,9 @@ from scipy.special import expit as sigmoid
 
 
 from psda.vmf import LogNormConst, VMF
+from psda.besseli import k_and_logk
+
+
 
 def logNormConst(dim):
     if dim==1: 
@@ -12,7 +15,7 @@ def logNormConst(dim):
     else: 
         return LogNormConst(dim) 
 
-def vmf(logC, mu=None, k=None):
+def gvmf(logC, mu=None, k=None):
     if logC.dim==1: return VMFOneDim(mu, k, logC)
     return VMF(mu, k, logC)
     
@@ -22,7 +25,8 @@ class LogNormConstOneDim:
     def __init__(self): 
         self.dim = 1
 
-    def __call__(cls,k):
+    def __call__(cls, k=None, logk=None):
+        k, logk = k_and_logk(k, logk, True, False)
         return -np.logaddexp(k,-k)
 
 class VMFOneDim:
@@ -35,22 +39,23 @@ class VMFOneDim:
         self.logC = logC
         self.dim = 1
 
-        assert k is not None or mu is not None 
-        if mu is None:
-            mu = 1.0
+        if mu is not None:
+            mu = np.atleast_2d(mu)
+
+        if mu is None:   # uniform
+            assert k is None
+            mu = np.atleast_2d(1.0)
             k = 0.0
-            kmu = 0
+            kmu = k*mu
         elif k is None:
             kmu = mu
-            if not np.isscalar(kmu) and len(kmu)==1: kmu = kmu.item()
             k = np.abs(kmu)
             if np.isscalar(k): 
                 assert k > 0
             else:
                 assert all(k>0)
             mu = kmu / k
-        else:
-            if not np.isscalar(mu) and len(mu)==1: mu = mu.item()
+        else:   # both mu and k given
             kmu = k*mu
         self.mu = mu
         self.k = k
@@ -88,16 +93,16 @@ class VMFOneDim:
             
         if np.isscalar(n_or_labels):   # n iid samples from a single distribution
             n = n_or_labels
-            assert  np.isscalar(kmu)
+            assert  np.isscalar(kmu) or kmu.size==1
             ber = self.pplus1 > rand(n) 
             return (2.0*ber -1).reshape(-1,1)
             
 
         else:                          # index distribution by labels 
             labels = n_or_labels
-            pplus1 = self.pplus1[labels]
+            pplus1 = self.pplus1[labels,:]
             n = len(pplus1)
-            ber = pplus1 > rand(n) 
+            ber = pplus1 > rand(n).resahpe(-1,1) 
             return (2.0*ber -1).reshape(-1,1)
         
     @classmethod
@@ -108,7 +113,7 @@ class VMFOneDim:
 
 if __name__ == "__main__":
 
-    kmu = VMFOneDim().sample(10)
+    kmu = VMFOneDim.uniform().sample(10)
     VMFOneDim(kmu).sample([0,1,2])    
     
     
