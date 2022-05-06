@@ -2,7 +2,7 @@ import numpy as np
 from numpy.random import randint
 
 from psda.vmf_sampler import sample_uniform
-from subsphere.pca import randStiefel, lengthnorm
+from subsphere.pca import randStiefel, lengthnorm, retract
 
 from psda.vmf_onedim import gvmf, logNormConst
 
@@ -22,9 +22,32 @@ class Embedding:
         
         self.d = d = np.array([Ki.shape[1] for Ki in K])
         self.T = d.sum()
+        self.splt = d.cumsum()[:-1]
         
         self.L = self.wstack()
         
+        
+    def update_w(self,R):
+        K = self.K
+        w = np.array([(Ri*Ki).sum() for Ri, Ki in zip(R,K)])
+        return Embedding(lengthnorm(w),K)
+        
+    def update_K(self,R):
+        w, splt = self.w, self.splt
+        F = np.hstack([wi*Ri for wi, Ri in zip(w, R)])
+        F = retract(F)
+        return Embedding(w,np.hsplit(F,splt))
+    
+    
+    def update(self,R,niters):
+        w, splt = self.w, self.splt
+        for i in range(niters):
+            F = np.hstack([wi*Ri for wi, Ri in zip(w, R)])
+            K = np.hsplit(retract(F),splt)
+            w = lengthnorm(np.array([(Ri*Ki).sum() for Ri, Ki in zip(R,K)]))
+        return Embedding(w,K)    
+        
+    
         
     def embed(self,Z):
         X =  Z @ self.L.T 
@@ -34,7 +57,7 @@ class Embedding:
         return X @ self.L
         
     def stack(self):
-        return np.hstack([self.K])    
+        return np.hstack(self.K)    
     
     def wstack(self):
         return np.hstack([wi*Ki for wi,Ki in zip(self.w,self.K)])
@@ -58,10 +81,15 @@ class Embedding:
 class Prior:
     def __init__(self,gamma,v):
         self.d = d = np.array([len(vi) for vi in v])
+        self.splt = d.cumsum()[:-1]
         logCd = {di:logNormConst(di) for di in np.unique(d)}
         self.vmf = [gvmf(logCd[di],vi,gammai) \
                     for di,gammai, vi in zip(d,gamma,v)]
         self.gamma_v = np.hstack([gammai*vi for gammai,vi in zip(gamma,v)])    
+
+    def unstack(self,Z):
+        return np.hsplit(Z,self.splt)
+
 
     def sample(self,n):
         return np.hstack([vmfi.sample(n) for vmfi in self.vmf])
@@ -75,14 +103,16 @@ class ToroidalPSDA:
         assert len(w) == len(K) == len(gamma) == len(v)
         
         self.kappa = kappa
+        self.D = D = K[0].shape[0]
         self.logCD = logNormConst(D)
         
-        self.D = K[0].shape[0]
         self.n = n = len(K)
         self.m = m
         assert 0 <= m <= n
         
         self.E = Embedding(w,K)
+        self.gamma = gamma
+        self.v = v
 
 
         if m>0:
@@ -182,18 +212,18 @@ class ToroidalPSDA:
         E = Embedding.random(w,D,d)
         return cls(kappa,m,E.w,E.K,gamma,v)    
         
-    def inferZ(self,X,L):
+    def inferZ(self,Xsum):
         """
-        X: (n,dim)   data
-        L: (ns,n)    one-hot label matrix
+        Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
+        
         """
         assert self.zprior is not None
         kappa = self.kappa
-        return Posterior(self.zprior,kappa*(L@self.Ez.project(X)))
+        return Posterior(self.zprior,kappa*(self.Ez.project(Xsum)))
         
     def inferY(self,X):
         """
-        X: (n,dim)   data
+        X: (n,D)   data
         """
         assert self.yprior is not None
         kappa = self.kappa
@@ -201,17 +231,33 @@ class ToroidalPSDA:
     
     
     
+    def em_iter(self, X, Xsum, wK_iters = 5):
+        """
+        X: (n,D)  data
+        Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
+        """
+        Rz = self.inferZ(Xsum).R(Xsum)
+        Ry = self.inferY(X).R(X)
+        E = self.E.update([*Rz,*Ry], wK_iters)
+        return ToroidalPSDA(self.kappa, self.m, E.w, E.K, self.gamma, self.v)
+    
+    
 class Posterior:
     def __init__(self, prior, stats):
-        stats = stats + prior.gamma_v
-        s = prior.d.cumsum()[:-1]
-        stats = np.hsplit(stats,s)
+        self.prior = prior
+        stats = prior.unstack(stats + prior.gamma_v)
         self.vmf = [gvmf(prior.vmf[i].logC,statsi) \
                     for i, statsi in enumerate(stats)]
         means = [vmfi.mean() for vmfi in self.vmf]
         self.mean = np.hstack(means)
         
-        
+    def R(self, X):
+        """
+        X: (n,D)
+        """
+        Mu = self.mean      # (n,T)
+        R = X.T @ Mu        # (D,T)
+        return self.prior.unstack(R)
         
 if __name__ == "__main__":
 
@@ -347,18 +393,69 @@ if __name__ == "__main__":
 
     # plt.show()
 
+    
+
+    # #  test 2-d z posterior
+    # D = 3
+    # m, n = 1,2
+    # d = np.array([2,1])        
+    # gamma_z = np.zeros(m)
+    # gamma_y = np.zeros(n-m)
+    # kappa = 2
+
+    # snr = 10
+    # w = np.array([np.sqrt(snr),1])
+    # model = ToroidalPSDA.random(D, d, w, kappa, gamma_z, gamma_y)
+    
+    # X, Y, Z, Mu, labels = model.sample(1000,10)
+    # Ze = model.Ez.embed(Z)
+
+
+
+    # fig = plt.figure()
+    # ax = fig.add_subplot(121, projection='3d')
+    # Globe.plotgrid(ax)
+    # ax.scatter(*X.T, color='g', marker='.',label='X')
+    # ax.scatter(*Ze.T, color='r', marker='.',label='Ze')
+    # ax.legend()
+    # ax.set_title(f'zdim = 1, ydim = 2, snr = 1, kappa={kappa}')
+    # ax.set_xlim([-1,1])
+    # ax.set_ylim([-1,1])
+    # ax.set_zlim([-1,1])
+
+    # plabels, counts = one_hot.pack(labels, return_counts=True)
+    # L = one_hot.scipy_sparse_1hot_cols(plabels)
+    # Zpost = model.inferZ(X,L)
+
+    # ax = fig.add_subplot(122)
+    # ax.set_aspect('equal', 'box')
+    # Zhat = Zpost.mean
+    # ax.scatter(*Z.T,color='g',marker = 'o', label='Y')
+    # ax.scatter(*Zhat.T,color='r',marker = 'x', label='Yhat')
+    # ax.legend()
+    # ax.set_title('z posterior means')
+    # # ax.set_xlim([-1,1])
+    # # ax.set_ylim([-1,1])
+    # ax.grid()    
+
+
+
+    # plt.show()
+
+
+    #  test 1-d z posterior
     D = 3
-    m, n = 1,2
-    d = np.array([2,1])        
+    m, n = 2,3
+    d = np.array([1,1,1])        
     gamma_z = np.zeros(m)
     gamma_y = np.zeros(n-m)
-    kappa = 2
+    kappa = 5
 
-    snr = 10
-    w = np.array([np.sqrt(snr),1])
+    snr = 0.1
+    w = np.array([np.sqrt(snr),np.sqrt(snr),1])
     model = ToroidalPSDA.random(D, d, w, kappa, gamma_z, gamma_y)
     
-    X, Y, Z, Mu, labels = model.sample(1000,10)
+    X, Y, Z, Mu, labels = model.sample(100,10)
     Ze = model.Ez.embed(Z)
 
 
@@ -369,20 +466,25 @@ if __name__ == "__main__":
     ax.scatter(*X.T, color='g', marker='.',label='X')
     ax.scatter(*Ze.T, color='r', marker='.',label='Ze')
     ax.legend()
-    ax.set_title(f'zdim = 1, ydim = 2, snr = 1, kappa={kappa}')
+    ax.set_title(f'zdim = {d[0]}, ydim = {d[1]}, snr = {snr}, kappa={kappa}')
     ax.set_xlim([-1,1])
     ax.set_ylim([-1,1])
     ax.set_zlim([-1,1])
 
     plabels, counts = one_hot.pack(labels, return_counts=True)
     L = one_hot.scipy_sparse_1hot_cols(plabels)
-    Zpost = model.inferZ(X,L)
+    # L: (ns,n)    one-hot label matrix
+    Zpost = model.inferZ(L@X)
 
     ax = fig.add_subplot(122)
     ax.set_aspect('equal', 'box')
     Zhat = Zpost.mean
-    ax.scatter(*Z.T,color='g',marker = 'o', label='Y')
-    ax.scatter(*Zhat.T,color='r',marker = 'x', label='Yhat')
+    # ax.plot(Z,Zhat,'.')
+    # ax.scatter(*Zhat.T,color='r',marker = 'x', label='Yhat')
+    
+    ax.scatter(*Zhat.T,color='r', marker = 'x', label='Zhat')
+    ax.scatter(*Z.T,color='g', marker = 'o', label='Z')
+    
     ax.legend()
     ax.set_title('z posterior means')
     # ax.set_xlim([-1,1])

@@ -40,7 +40,10 @@ class VMFOneDim:
         self.dim = 1
 
         if mu is not None:
-            mu = np.atleast_2d(mu)
+            mu = np.atleast_1d(mu)
+            if mu.ndim==1:
+                mu = mu.reshape(-1,1)
+            assert mu.ndim==2    
 
         if mu is None:   # uniform
             assert k is None
@@ -83,27 +86,27 @@ class VMFOneDim:
         - If neither n nor labels is given, one sample from each distribution
           is returned.
         """
-        kmu = self.kmu
+        pplus1 = self.pplus1
         if n_or_labels is None:
-            if np.isscalar(kmu):
+            if pplus1.size==1:
                 return self.sample(1)
             else:
-                n = len(kmu)
+                n = len(pplus1)
                 return self.sample(np.arange(n))
             
         if np.isscalar(n_or_labels):   # n iid samples from a single distribution
             n = n_or_labels
-            assert  np.isscalar(kmu) or kmu.size==1
-            ber = self.pplus1 > rand(n) 
+            assert  pplus1.size==1
+            ber = pplus1 > rand(n) 
             return (2.0*ber -1).reshape(-1,1)
             
 
         else:                          # index distribution by labels 
             labels = n_or_labels
-            pplus1 = self.pplus1[labels,:]
-            n = len(pplus1)
-            ber = pplus1 > rand(n).resahpe(-1,1) 
-            return (2.0*ber -1).reshape(-1,1)
+            pplus1 = pplus1[labels,:]
+            n = pplus1.size
+            ber = pplus1 > rand(n).reshape(-1,1) 
+            return (2.0*ber -1)
         
     @classmethod
     def uniform(cls):
