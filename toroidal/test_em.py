@@ -13,8 +13,8 @@ m, n = 1,2
 d = np.array([2,1])        
 gamma_z = np.zeros(m)
 gamma_y = np.zeros(n-m)
-kappa = 200
-snr = 10
+kappa = 2000
+snr = 0.1
 w0 = np.array([np.sqrt(snr),1])
 model0 = ToroidalPSDA.random(D, d, w0, kappa, gamma_z, gamma_y)
 
@@ -41,11 +41,11 @@ ax.set_zlim([-1,1])
 
 snr = 1
 w = np.array([np.sqrt(snr),1])
-model = ToroidalPSDA.random(D, d, w, kappa, gamma_z, gamma_y)
-for i in range(5):
-    print(f"em iter {i}: w = {model.E.w}")
+model = ToroidalPSDA.random(D, d, w, kappa/5, gamma_z, gamma_y)
+for i in range(10):
+    print(f"em iter {i}: w = {model.E.w}, kappa = {model.kappa}")
     model = model.em_iter(X, Xsum)
-print(f"\ncf true w:     {model0.E.w}")
+print(f"\ncf true   w = {model0.E.w}, kappa = {model0.kappa}")
 
 # generate data from trained model
 X, Y, Z, Mu, labels = model0.sample(1000,100)

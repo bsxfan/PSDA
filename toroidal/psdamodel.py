@@ -6,7 +6,7 @@ from subsphere.pca import randStiefel, lengthnorm, retract
 
 from psda.vmf_onedim import gvmf, logNormConst
 
-
+from scipy.optimize import minimize_scalar
 
 class Embedding:
     def __init__(self,w,K):
@@ -44,8 +44,10 @@ class Embedding:
         for i in range(niters):
             F = np.hstack([wi*Ri for wi, Ri in zip(w, R)])
             K = np.hsplit(retract(F),splt)
-            w = lengthnorm(np.array([(Ri*Ki).sum() for Ri, Ki in zip(R,K)]))
-        return Embedding(w,K)    
+            tilde_w = np.array([(Ri*Ki).sum() for Ri, Ki in zip(R,K)])
+            w = lengthnorm(tilde_w)
+        Q = w @ tilde_w  # we need this to update kappa
+        return Embedding(w,K), Q    
         
     
         
@@ -238,8 +240,24 @@ class ToroidalPSDA:
         """
         Rz = self.inferZ(Xsum).R(Xsum)
         Ry = self.inferY(X).R(X)
-        E = self.E.update([*Rz,*Ry], wK_iters)
-        return ToroidalPSDA(self.kappa, self.m, E.w, E.K, self.gamma, self.v)
+        E, Q = self.E.update([*Rz,*Ry], wK_iters)
+        
+        N = X.shape[0]
+        kappa = self.update_kappa(N,Q)
+        
+        return ToroidalPSDA(kappa, self.m, E.w, E.K, self.gamma, self.v)
+    
+    
+    def update_kappa(self,N,Q):
+        #return self.kappa
+        logkappa = np.log(self.kappa)
+        logCD = self.logCD
+        def f(logk):
+            k = np.exp(logk)
+            return -N*logCD(logk=logk) - k*Q
+        res = minimize_scalar(f,[logkappa,logkappa-1])
+        logkappa = res.x
+        return np.exp(logkappa)
     
     
 class Posterior:
