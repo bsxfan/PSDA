@@ -2,6 +2,7 @@ import numpy as np
 from numpy.random import rand
 
 from scipy.special import expit as sigmoid
+from scipy.special import entr, rel_entr
 
 
 from psda.vmf import LogNormConst, VMF
@@ -113,6 +114,16 @@ class VMFOneDim:
         return cls()
         
             
+        
+    def entropy(self):
+        return entr(self.pplus1) + entr(self.pmin1)
+
+
+    def kl(self, other):
+        return rel_entr(self.pplus1, other.pplus1) \
+             + rel_entr(self.pmin1, other.pmis1)
+        
+        
 
 if __name__ == "__main__":
 

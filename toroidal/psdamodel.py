@@ -6,6 +6,8 @@ from subsphere.pca import randStiefel, lengthnorm, retract
 
 from psda.vmf_onedim import gvmf, logNormConst
 
+from psda.vmf_map import mapestimate, GammaPrior
+
 from scipy.optimize import minimize_scalar
 
 class Embedding:
