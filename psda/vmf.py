@@ -135,6 +135,9 @@ def decompose(x):
     as a 1d array (not as a column).
     
     """
+    if np.isscalar(x):
+        if x==0: return 0.0, 1.0
+        return np.abs(x), np.sign(x,dtype=float)
     if x.ndim == 1:
         norm = np.sqrt((x**2).sum(axis=-1))
         if norm == 0: return 0.0, x

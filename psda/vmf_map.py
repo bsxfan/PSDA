@@ -10,11 +10,20 @@ from scipy.special import psi, gammaln
 
 
 def logkappa_asymptote_intersection(dim):
-    assert dim >= 1
+    assert dim > 1
     nu = dim/2-1
-    return ( nu*np.log(2) + gammaln(nu+1) - np.log(2*np.pi) ) / (nu + 0.5)     
+    return ( nu*np.log(2) + gammaln(nu+1) - np.log(2*np.pi)/2 ) / (nu + 0.5)     
 
 
+def horz_asymptote(dim):
+    assert dim > 1
+    nu = dim/2-1
+    return nu*np.log(2) + gammaln(nu+1)
+
+def lin_asymptote(dim,logk):
+    assert dim > 1
+    nu = dim/2-1
+    return np.log(2*np.pi)/2 + (nu+0.5)*logk
 
 class GammaPrior:
     def __init__(self, mean, beta):
@@ -96,8 +105,44 @@ class KLPrior:
     def loglh(self, k=None, logk=None):
         k, logk = k_and_logk(k, logk, True, False)
         other = gvmf(self.logC,self.mu,k)
-        return self.pseudo_count*self.ref.kl(other)
+        y = (-self.pseudo_count)*self.ref.kl(other)
+        if np.isscalar(y): return y
+        if y.size==1: return y.item()
+        return y.ravel()
+            
 
+    @classmethod
+    def assign(cls, dim, mu, modefactor, pseudo_count):
+        """
+        When dim >=2. the prior mode for kappa is set at modefactor*k0, 
+        where k0 depends on dim and is neutral in the sense of being neither 
+        concentrated nor uniform. 
+        
+        When dim=1, k0 is arbitrarily set to 1.
+        
+        beta is inversely proportional to the variance
+        
+        
+        inputs:
+            
+            dim: the enclosing Euclidean dimension, 1,2,...
+
+            modefactor>0, with 1 as neutral value
+                modefactor > 1, encodes belief in concentration
+                modefactor < 1, encodes belief in dispersion
+                
+            pseudocount>0, the number (a fraction is allowed) of phantom
+                           data points drawn from the reference VMF  
+        
+        
+        
+        """
+        if dim >= 2:
+            kappa = np.exp(logkappa_asymptote_intersection(dim))
+        else:
+            assert dim == 1
+            kappa = 1
+        return cls(mu, kappa*modefactor, pseudo_count)
     
     
 
@@ -105,6 +150,12 @@ def kappallh(n, dot, logC, k=None, logk=None):
     k, logk = k_and_logk(k,logk) 
     return n*logC(k, logk) + k*dot           
     
+
+def mu_ml(sumx):
+    sumx = np.atleast_1d(sumx)
+    assert sumx.ndim==1
+    sz, mu = decompose(sumx)
+    return mu
 
 
 def mapestimate(n, sumx, kappa_prior, logC = None, logkappa = None):
@@ -129,28 +180,118 @@ if __name__ == "__main__":
     from psda.vmf_onedim import gvmf, logNormConst
     from psda.vmf_sampler import sample_uniform
     
+    from subsphere.pca import Globe
+    
+    
     import matplotlib.pyplot as plt
     
     
     dim = 1
     mu = sample_uniform(dim).ravel()
     logC = logNormConst(dim)
-    kappa = 1 
+    kappa = 2
     vmf = gvmf(logC,mu,kappa)      
     n = 100
     x = vmf.sample(n)
-    
-    prior = GammaPrior.assign(dim, 1.0, 0.001)
     sumx = x.sum()
-    #muhat, kappahat = mapestimate(n,sumx,prior)
+
+    muhat = mu_ml(sumx)    
+    #prior = GammaPrior.assign(dim, 1.0, 0.001)
+    prior = KLPrior.assign(dim, muhat, 1, 1)
+    muhat, kappahat = mapestimate(n,sumx,prior)
     dot = mu*sumx
     
-    fac = np.linspace(np.log(1/10),np.log(2),200)
-    llh = kappallh(n, dot, logC,None,np.log(kappa)+fac)
-    plt.plot(fac,llh,label='llh')
-    plt.plot(fac,prior.loglh(logk=np.log(kappa)+fac),label='llh')
+    kmin = min(kappa,kappahat) / 5
+    kmax = max(kappa,kappahat) * 5
+    
+    
+    kk = np.linspace(kmin,kmax,200)
+    llh = kappallh(n, dot, logC,kk)
+    prior_llh = prior.loglh(kk)
+    y = llh + prior_llh
+    ymax = y.max()
+    priormax = prior_llh.max()
+    llhmax = llh.max()
+    plt.figure()
+    plt.plot(kk,y-ymax,label='joint')
+    plt.plot(kk,prior_llh-priormax,label='prior')
+    plt.plot(kk,llh-llhmax,label='llh')
+    plt.plot(kappa,0.0,'*',label='true') 
+    plt.plot(kappahat,0.0,'*',label='map') 
     plt.legend()
     plt.grid()
+    plt.show()
+    
+    
+    
+    dim = 20
+    mu = sample_uniform(dim).ravel()
+    logC = logNormConst(dim)
+    
+    
+    logk = np.linspace(-10,10,200)
+    logk0 = logkappa_asymptote_intersection(dim)
+    y = logC(logk=logk,exp_scale=True)
+    y0 = horz_asymptote(dim) #logC(logk=logk0,exp_scale=True)
+    y1 = lin_asymptote(dim, logk)
+    plt.figure()
+    plt.plot(logk,y)
+    plt.plot(logk,y1,'--')
+    plt.plot([logk[0],logk0],[y0,y0],'*')
+    plt.grid()
+    plt.show()
+    
+
+    kappa = 100*np.exp(logkappa_asymptote_intersection(dim))
+    vmf = gvmf(logC,mu,kappa)    
+    # X = vmf.sample(1000)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # Globe.plotgrid(ax)
+    # ax.scatter(*X.T, color='g', marker='.')
+    # ax.scatter(*mu, color='r', marker='*')
+    # fig.show()
+    
+    
+    
+    n = 100
+    x = vmf.sample(n)
+    sumx = x.sum(axis=0)
+
+    muhat = mu_ml(sumx)    
+    prior = KLPrior.assign(dim, muhat, 1, 0.1)
+    muhat, kappahat = mapestimate(n,sumx,prior)
+    dot = mu@sumx
+    
+    kmin = min(kappa,kappahat) / 5
+    kmax = max(kappa,kappahat) * 5
+    
+    
+    kk = np.linspace(kmin,kmax,200)
+    llh = kappallh(n, dot, logC,kk)
+    prior_llh = prior.loglh(kk)
+    y = llh + prior_llh
+    ymax = y.max()
+    priormax = prior_llh.max()
+    llhmax = llh.max()
+    plt.figure()
+    plt.plot(kk,y-ymax,label='joint')
+    plt.plot(kk,prior_llh-priormax,label='prior')
+    plt.plot(kk,llh-llhmax,label='llh')
+    plt.plot(kappa,0.0,'*',label='true') 
+    plt.plot(kappahat,0.0,'*',label='map') 
+    plt.legend()
+    plt.grid()
+    plt.show()
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     

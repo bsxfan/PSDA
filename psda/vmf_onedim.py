@@ -121,7 +121,7 @@ class VMFOneDim:
 
     def kl(self, other):
         return rel_entr(self.pplus1, other.pplus1) \
-             + rel_entr(self.pmin1, other.pmis1)
+             + rel_entr(self.pmin1, other.pmin1)
         
         
 
