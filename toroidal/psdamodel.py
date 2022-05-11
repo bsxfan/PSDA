@@ -1,14 +1,15 @@
 import numpy as np
 from numpy.random import randint
+from scipy.optimize import minimize_scalar
 
 from psda.vmf_sampler import sample_uniform
 from subsphere.pca import randStiefel, lengthnorm, retract
 
 from psda.vmf_onedim import gvmf, logNormConst
 
-from psda.vmf_map import mapestimate, GammaPrior
+from psda.vmf_map import map_estimate, ml_estimate, KLPrior
 
-from scipy.optimize import minimize_scalar
+
 
 class Embedding:
     def __init__(self,w,K):
@@ -89,7 +90,8 @@ class Prior:
         logCd = {di:logNormConst(di) for di in np.unique(d)}
         self.vmf = [gvmf(logCd[di],vi,gammai) \
                     for di,gammai, vi in zip(d,gamma,v)]
-        self.gamma_v = np.hstack([gammai*vi for gammai,vi in zip(gamma,v)])    
+        #self.gamma_v = np.hstack([gammai*vi for gammai,vi in zip(gamma,v)])    
+        self.gamma_v = np.hstack([vmfi.kmu for vmfi in self.vmf])
 
     def unstack(self,Z):
         return np.hsplit(Z,self.splt)
@@ -240,8 +242,10 @@ class ToroidalPSDA:
         X: (n,D)  data
         Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
         """
-        Rz = self.inferZ(Xsum).R(Xsum)
-        Ry = self.inferY(X).R(X)
+        zPost = self.inferZ(Xsum)
+        yPost = self.inferY(X)
+        Rz = zPost.R(Xsum)
+        Ry = yPost.R(X)
         E, Q = self.E.update([*Rz,*Ry], wK_iters)
         
         N = X.shape[0]
@@ -269,7 +273,9 @@ class Posterior:
         self.vmf = [gvmf(prior.vmf[i].logC,statsi) \
                     for i, statsi in enumerate(stats)]
         means = [vmfi.mean() for vmfi in self.vmf]
-        self.mean = np.hstack(means)
+        self.mean = mean = np.hstack(means)
+        self.n = mean.shape[0]
+        self.sums = [vmfi.mean().sum(axis=0) for vmfi in self.vmf]
         
     def R(self, X):
         """
@@ -278,6 +284,9 @@ class Posterior:
         Mu = self.mean      # (n,T)
         R = X.T @ Mu        # (D,T)
         return self.prior.unstack(R)
+    
+    
+    
         
 if __name__ == "__main__":
 

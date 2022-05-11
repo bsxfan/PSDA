@@ -88,8 +88,9 @@ class GammaPrior:
 
 
 class KLPrior:
-    def __init__(self,mu,kappa0,pseudo_count):
-        self.mu = mu = np.atleast_1d(mu)
+    def __init__(self,dim,kappa0,pseudo_count):
+        #self.mu = mu = np.atleast_1d(mu)
+        self.mu = mu = sample_uniform(dim)
         assert mu.ndim==1
         dim = len(mu)
         self.logC = logC = logNormConst(dim)
@@ -112,7 +113,7 @@ class KLPrior:
             
 
     @classmethod
-    def assign(cls, dim, mu, modefactor, pseudo_count):
+    def assign(cls, dim, modefactor, pseudo_count):
         """
         When dim >=2. the prior mode for kappa is set at modefactor*k0, 
         where k0 depends on dim and is neutral in the sense of being neither 
@@ -138,11 +139,11 @@ class KLPrior:
         
         """
         if dim >= 2:
-            kappa = np.exp(logkappa_asymptote_intersection(dim))
+            kappa0 = np.exp(logkappa_asymptote_intersection(dim))
         else:
             assert dim == 1
-            kappa = 1
-        return cls(mu, kappa*modefactor, pseudo_count)
+            kappa0 = 1
+        return cls(dim, kappa0*modefactor, pseudo_count)
     
     
 
@@ -158,7 +159,7 @@ def mu_ml(sumx):
     return mu
 
 
-def mapestimate(n, sumx, kappa_prior, logC = None, logkappa = None):
+def map_estimate(n, sumx, kappa_prior, logC = None, logkappa = None):
     sumx = np.atleast_1d(sumx)
     assert sumx.ndim==1
     if logC is None:
@@ -174,6 +175,19 @@ def mapestimate(n, sumx, kappa_prior, logC = None, logkappa = None):
     kappa = np.exp(res.x)
     return mu, kappa
 
+def ml_estimate(n, sumx, logkappa, logC = None):
+    sumx = np.atleast_1d(sumx)
+    assert sumx.ndim==1
+    if logC is None:
+        logC = logNormConst(len(sumx))
+    sz, mu = decompose(sumx)
+    dot = mu @ sumx
+    def f(logk):
+        k = np.exp(logk)
+        return -n*logC(k, logk) - k*dot 
+    res = minimize_scalar(f,[logkappa-1,logkappa]) 
+    kappa = np.exp(res.x)
+    return mu, kappa
 
 if __name__ == "__main__":
     
@@ -195,10 +209,8 @@ if __name__ == "__main__":
     x = vmf.sample(n)
     sumx = x.sum()
 
-    muhat = mu_ml(sumx)    
-    #prior = GammaPrior.assign(dim, 1.0, 0.001)
-    prior = KLPrior.assign(dim, muhat, 1, 1)
-    muhat, kappahat = mapestimate(n,sumx,prior)
+    prior = KLPrior.assign(dim, 1, 1)
+    muhat, kappahat = map_estimate(n,sumx,prior)
     dot = mu*sumx
     
     kmin = min(kappa,kappahat) / 5
@@ -258,9 +270,8 @@ if __name__ == "__main__":
     x = vmf.sample(n)
     sumx = x.sum(axis=0)
 
-    muhat = mu_ml(sumx)    
-    prior = KLPrior.assign(dim, muhat, 1, 0.1)
-    muhat, kappahat = mapestimate(n,sumx,prior)
+    prior = KLPrior.assign(dim, 200, n)
+    muhat, kappahat = map_estimate(n,sumx,prior)
     dot = mu@sumx
     
     kmin = min(kappa,kappahat) / 5
