@@ -87,13 +87,12 @@ class GammaPrior:
         
 
 
-class KLPrior:
-    def __init__(self,dim,kappa0,pseudo_count):
-        #self.mu = mu = np.atleast_1d(mu)
+class KappaPrior_KL:
+    def __init__(self,logC,kappa0,pseudo_count):
+        self.logC = logC
+        dim = logC.dim
         self.mu = mu = sample_uniform(dim)
         assert mu.ndim==1
-        dim = len(mu)
-        self.logC = logC = logNormConst(dim)
         self.ref = gvmf(logC,mu,kappa0)
         self.pseudo_count = pseudo_count
         self.kappa0 = kappa0
@@ -113,7 +112,7 @@ class KLPrior:
             
 
     @classmethod
-    def assign(cls, dim, modefactor, pseudo_count):
+    def assign(cls, logC, modefactor, pseudo_count):
         """
         When dim >=2. the prior mode for kappa is set at modefactor*k0, 
         where k0 depends on dim and is neutral in the sense of being neither 
@@ -121,12 +120,13 @@ class KLPrior:
         
         When dim=1, k0 is arbitrarily set to 1.
         
-        beta is inversely proportional to the variance
         
         
         inputs:
             
-            dim: the enclosing Euclidean dimension, 1,2,...
+            logC: the log-normalization constant function
+                  -- Note, it also provides logC.dim
+            
 
             modefactor>0, with 1 as neutral value
                 modefactor > 1, encodes belief in concentration
@@ -138,12 +138,13 @@ class KLPrior:
         
         
         """
+        dim = logC.dim
         if dim >= 2:
             kappa0 = np.exp(logkappa_asymptote_intersection(dim))
         else:
             assert dim == 1
             kappa0 = 1
-        return cls(dim, kappa0*modefactor, pseudo_count)
+        return cls(logC, kappa0*modefactor, pseudo_count)
     
     
 
@@ -209,7 +210,7 @@ if __name__ == "__main__":
     x = vmf.sample(n)
     sumx = x.sum()
 
-    prior = KLPrior.assign(dim, 1, 1)
+    prior = KappaPrior_KL.assign(logC, 1, 1)
     muhat, kappahat = map_estimate(n,sumx,prior)
     dot = mu*sumx
     
@@ -270,8 +271,9 @@ if __name__ == "__main__":
     x = vmf.sample(n)
     sumx = x.sum(axis=0)
 
-    prior = KLPrior.assign(dim, 200, n)
+    prior = KappaPrior_KL.assign(logC, 200, n)
     muhat, kappahat = map_estimate(n,sumx,prior)
+    #muhat, kappahat = ml_estimate(n,sumx,0.0)
     dot = mu@sumx
     
     kmin = min(kappa,kappahat) / 5

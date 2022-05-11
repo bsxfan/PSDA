@@ -7,12 +7,36 @@ from subsphere.pca import randStiefel, lengthnorm, retract
 
 from psda.vmf_onedim import gvmf, logNormConst
 
-from psda.vmf_map import map_estimate, ml_estimate, KLPrior
+from psda.vmf_map import map_estimate as vmf_map_estimate
+from psda.vmf_map import ml_estimate as vmf_ml_estimate
+from psda.vmf_map import KappaPrior_KL
 
 
 
 class Embedding:
+    """
+    This is one of the components contained in the model.
+    
+    This is a function from a product space, where the hidden variables live,
+    to the Euclidean representation R^D where the observations live.
+    
+    Each hidden variable is projected into R^D by one of the factor loading 
+    matrices and the function output is the weighted sum of those projections.
+    
+    This object is used to represent the function from all the hidden variables
+    to S^{D-1}, but also for the speaker and channel subsets, in which case the 
+    function outputs are inside the ball, not on S^{D-1}. We reach S^{D-1} only 
+    if all speaker and channel factors are added. 
+    
+    
+    """
     def __init__(self,w,K):
+        """
+        w: (n,) weights whose squares sum to either 1, or less than 1
+        K: list of length n, containing mutually orthogonal factor loading 
+           matrices, in general with differing numbers of columns. Each matrix 
+           has D rows.
+        """
 
         assert len(w) == len(K)
         self.n = len(w)
@@ -31,18 +55,27 @@ class Embedding:
         
         
     def update_w(self,R):
+        """
+        Given statistics in list R, does an M-step update for w when K is fixed
+        """
         K = self.K
         w = np.array([(Ri*Ki).sum() for Ri, Ki in zip(R,K)])
         return Embedding(lengthnorm(w),K)
         
     def update_K(self,R):
+        """
+        Given statistics in list R, does an M-step update for K when w is fixed
+        """
         w, splt = self.w, self.splt
         F = np.hstack([wi*Ri for wi, Ri in zip(w, R)])
         F = retract(F)
         return Embedding(w,np.hsplit(F,splt))
     
     
-    def update(self,R,niters):
+    def update(self, R, niters):
+        """
+        Given statistics in list R, does an M-step update for K and w.
+        """
         w, splt = self.w, self.splt
         for i in range(niters):
             F = np.hstack([wi*Ri for wi, Ri in zip(w, R)])
@@ -55,24 +88,68 @@ class Embedding:
     
         
     def embed(self,Z):
+        """
+        This is the forward function from hidden variables to observation space
+        
+        input: 
+            
+            Z: (t,T) horizontally stacked hidden variables, t of them. The sum of
+                 hiddeb variable dimensions is T.
+                 
+        output:
+            
+            X: (t,D) function output
+                 
+        """
         X =  Z @ self.L.T 
         return X
         
     def project(self,X):
+        """
+        project backwards, from observation space to stacked hidden variable 
+        space
+        
+        input: X (t,D)
+        output: Z: (t,T)
+        
+        """
         return X @ self.L
         
     def stack(self):
+        """
+        returns matrix of horizontally stacked factor loading matrices (F)
+        F should have orthonormal columns
+        """
         return np.hstack(self.K)    
     
     def wstack(self):
+        """
+        returns matrix of horizontally stacked weighted factor loading matrices
+        """
         return np.hstack([wi*Ki for wi,Ki in zip(self.w,self.K)])
 
     @classmethod
     def unstack(cls,F,d):
+        """
+        splits F into a list of matrices, each with dimension as given in d
+        """
+        assert d.sum() == F.shape[-1]
         return np.hsplit(F,d.cumsum()[:-1])
     
     @classmethod
     def random(cls,w,D,d):
+        """
+        Generates a random Embedding object, given: 
+            weights w, (n,) 
+            number of rows, D, common to all matrices
+            d: (n,) number of columns of each matrix
+            
+            we need d.sum() <= D
+            
+            w does not need to be length-normalized, it is done here
+            
+            
+        """
         assert len(d) == len(w)
         T = d.sum()
         assert T <= D
@@ -84,28 +161,78 @@ class Embedding:
     
     
 class Prior:
+    """
+    This is another component contained in the model, representing a collection
+    of hidden variables.
+    """
     def __init__(self,gamma,v):
+        """
+        
+        gamma: (n,) VMF concentration for eah of n hidden variables 
+            
+        v: list of n mean directions, one for each hidden variable
+           the dimensionalities can differ
+               
+        """
         self.d = d = np.array([len(vi) for vi in v])
         self.splt = d.cumsum()[:-1]
         logCd = {di:logNormConst(di) for di in np.unique(d)}
         self.vmf = [gvmf(logCd[di],vi,gammai) \
                     for di,gammai, vi in zip(d,gamma,v)]
-        #self.gamma_v = np.hstack([gammai*vi for gammai,vi in zip(gamma,v)])    
         self.gamma_v = np.hstack([vmfi.kmu for vmfi in self.vmf])
 
     def unstack(self,Z):
+        """
+        Z: (t,T) set of t stacked hidden variabes
+        
+        returns a list with n unstacked matrices, each with t rows 
+        """
         return np.hsplit(Z,self.splt)
 
 
-    def sample(self,n):
-        return np.hstack([vmfi.sample(n) for vmfi in self.vmf])
+    def sample(self,t):
+        """
+        returns a matrix, (t,Z) of horizntally stacked, sampled hidden 
+        variables
+        """
+        return np.hstack([vmfi.sample(t) for vmfi in self.vmf])
 
 
 
 
 
 class ToroidalPSDA:
+    """
+    Toroidal PSDA model, with sampling, inference (scoring) and learning 
+    functionality.
+    
+    
+    
+    
+    
+    """
     def __init__(self, kappa, m, w, K, gamma, v):
+        """
+        kappa: vmf concentration, for within-speaker noise in S^{D-1}
+        
+        m: number of hidden speaker variables (can be zero for factor analysis)
+        
+        w: (n, ) unit-vector of factor weights, one for each hidden variable
+                 We need n >= m, so that n is the total number of speaker
+                 and channel variables. If 1 <= m = n, there are no channel 
+                 variables. The channel variables, if present, contribute
+                 structured within-speaker noise in addition to that provided
+                 by kappa. The m speaker variables provide between-speaker 
+                 variability.
+                 
+        K: list of n factor laoding matrices, one for each hidden variable
+
+        gamma: (n,) VMF prior concentrations for each of the n hidden variables
+        
+        v: list of VMF prior mean directions for each of the n hidden variables
+         
+                 
+        """
         assert len(w) == len(K) == len(gamma) == len(v)
         
         self.kappa = kappa
@@ -140,22 +267,64 @@ class ToroidalPSDA:
         
             
             
-    def sample_speakers(self,n):
+    def sample_speakers(self,ns):
+        """
+        Sample ns independent speakers, each represented by the stacked hidden
+        speaker variables. The output is in hidden variable product space, not
+        in observation space.
+        """
+        
         assert self.zprior is not None, "this model has no speaker factors"
-        Z = self.zprior.sample(n)
+        Z = self.zprior.sample(ns)
         return Z
 
-    def sample_channels(self,n):
+    def sample_channels(self,t):
+        """
+        Sample t independent channels, each represented by the stacked hidden
+        channel  variables. The output is in hidden variable product space, not
+        in observation space.
+        """
         if self.yprior is None: return None
-        Y = self.yprior.sample(n)
+        Y = self.yprior.sample(t)
         return Y
      
     def sample_data(self, Z=None, labels=None, Y=None, kappa=None, return_mu=False):
+        """
+        Sample observations, given labels and hidden variables.
+        
+        inputs:
+            
+            Z: (ns, Tz) stacked speaker variables, for ns speakers, or None if this
+                        model does not have speaker variables
+            
+    
+            Y: (t, Ty) stacked channel variables, for t observations, or None if 
+                       this model does not have channel variables
+    
+            labels: (t,) speaker labels in 0..ns-1
+                    if None, one sample is drawn for each speaker and/or channel 
+                    
+            kappa: (optional) can be used to override the model's kappa
+    
+            return_mu: (optional, default False)
+                       if True, return X and Mu, where Mu the sum of projected hidden
+                       variables, before adding the final VMF noise. 
+
+
+        output:
+            
+            X: (t, D)  observations
+
+
+        """
+        
         if Z is not None:
             assert self.m > 0
             Z = self.Ez.embed(Z)
             if labels is not None: 
                 Z = Z[labels,:]
+            elif Y is not None:
+                assert Z.shape[0] == Y.shape[0]
         else:
             assert self.m == 0
             assert labels is None
@@ -168,28 +337,60 @@ class ToroidalPSDA:
             Y = 0
         Mu = Z + Y
         if kappa is None: kappa = self.kappa
-        X = Mu if np.isinf(kappa) else gvmf(self.logCD, Mu,self.kappa).sample()    
+        X = Mu if np.isinf(kappa) else gvmf(self.logCD, Mu, kappa).sample()    
         if not return_mu: return X
         return X, Mu
     
     
-    def sample(self,n_or_labels, ns = None):
-        if np.isscalar(n_or_labels):
-            n = n_or_labels
+    def sample(self, t_or_labels, ns = None):
+        """
+        General model sampling function for hidden variables, optionally labels
+        and observations.
+        
+        
+        inputs:
+            
+            t_or_labels: 
+                if scalar t is provided, there will be t observations
+                if speaker labels are provided, t = len(labels)
+                if speaker labels are not proved, but ns is provided, 
+                   labels are sampled
+                if neither labels nor ns are provided, labels are 0..t-1
+                
+                When there are no speakers, provide t, not labels.
+                
+            ns: number of speakers
+                optional, can be inferred from labels, or if labels are not
+                          provided, then ns <- t
+                
+                
+        output: X, Y, Z, Mu, labels
+                
+            X: (t,D) observations
+            Z: (t,Tz) or None
+            Y: (t,Ty) or None
+            Mu: linear combination of hidden variables on the toroid in 
+                observation space
+            labels: (t,), as provided or sampled/constructed here    
+            
+            
+        """
+        if np.isscalar(t_or_labels):
+            t = t_or_labels
             if self.m > 0:
-                labels = np.arange(n) if ns is None else randint(ns,size=(n,))                     
+                labels = np.arange(t) if ns is None else randint(ns,size=(t,))                     
             else:
                 assert ns is None
         else:
             assert self.m > 0
-            n = len(labels)
+            t = len(labels)
         if labels is not None:
             ns = labels.max()+1
             Z = self.sample_speakers(ns)
         else:
             Z = None
         if self.m < self.n:
-            Y = self.sample_channels(n)
+            Y = self.sample_channels(t)
         else:
             Y = None
         X, Mu = self.sample_data(Z,labels,Y, return_mu=True)    
@@ -202,6 +403,9 @@ class ToroidalPSDA:
     
     @classmethod
     def random(cls, D, d, w, kappa, gamma_z = None, gamma_y = None):
+        """
+        Construct a model with some given and some random parameters.
+        """
         assert gamma_z is not None or gamma_y is not None
         if gamma_z is None:
             gamma = gamma_y
@@ -220,7 +424,9 @@ class ToroidalPSDA:
         
     def inferZ(self,Xsum):
         """
-        Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
+        Compute speaker factor posteriors.
+
+            Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
         
         """
         assert self.zprior is not None
@@ -229,7 +435,9 @@ class ToroidalPSDA:
         
     def inferY(self,X):
         """
-        X: (n,D)   data
+        Compute channel factor posteriors.
+        
+            X: (n,D)   data
         """
         assert self.yprior is not None
         kappa = self.kappa
@@ -237,10 +445,32 @@ class ToroidalPSDA:
     
     
     
-    def em_iter(self, X, Xsum, wK_iters = 5):
+    def em_iter(self, X, Xsum, wK_iters = 5, zprior = None, 
+                                             yprior = None,
+                                             kappa_prior = None):
         """
-        X: (n,D)  data
-        Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
+        Do one EM iteration and return a new updated model.
+        
+            X: (n,D)  data
+        
+            Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
+            
+            zprior: 
+                if False, the VMF priors for the z's are not updated
+                if None, the VMF priors are ML-updated
+                if zprior is a list of priors for the concentrations, do MAP
+                   updates
+            
+            yprior: 
+                if False, the VMF priors for the y's are not updated
+                if None, the VMF priors are ML-updated
+                if yprior is a list of priors for the concentrations, do MAP
+                   updates
+            
+            kappa_prior: 
+                if False, kappa is not updated
+                if None, kappa is ML-updated
+                if kappa_prior a prior for kappa, do a MAP update
         """
         zPost = self.inferZ(Xsum)
         yPost = self.inferY(X)
@@ -249,13 +479,32 @@ class ToroidalPSDA:
         E, Q = self.E.update([*Rz,*Ry], wK_iters)
         
         N = X.shape[0]
-        kappa = self.update_kappa(N,Q)
+        if kappa_prior is not False:
+            kappa = self.update_kappa(N,Q, kappa_prior)
+        else:
+            kappa = self.kappa    
         
-        return ToroidalPSDA(kappa, self.m, E.w, E.K, self.gamma, self.v)
+        do_zprior = zprior is not False
+        do_yprior = yprior is not False
+        
+        if do_zprior:
+            vz, gammaz = zPost.prior_update(zprior)
+        else:
+            vz = self.v[:self.m]      
+            gammaz = self.gamma[:self.m]      
+        
+        if do_yprior:
+            vy, gammay = yPost.prior_update(yprior)
+        else:
+            vy = self.v[self.m:]      
+            gammay = self.gamma[self.m:]
+        v = [*vz,*vy]
+        gamma = np.hstack([gammaz,gammay])
+        
+        return ToroidalPSDA(kappa, self.m, E.w, E.K, gamma, v)
     
     
-    def update_kappa(self,N,Q):
-        #return self.kappa
+    def ml_update_kappa(self,N,Q):
         logkappa = np.log(self.kappa)
         logCD = self.logCD
         def f(logk):
@@ -265,6 +514,16 @@ class ToroidalPSDA:
         logkappa = res.x
         return np.exp(logkappa)
     
+    def update_kappa(self, N, Q, kappa_prior = None):
+        if kappa_prior is None: return self.ml_update_kappa(N,Q)
+        logkappa = np.log(self.kappa)
+        logCD = self.logCD
+        def f(logk):
+            k = np.exp(logk)
+            return -N*logCD(logk=logk) - k*Q - kappa_prior.loglh(k)
+        res = minimize_scalar(f,[logkappa,logkappa-1])
+        logkappa = res.x
+        return np.exp(logkappa)
     
 class Posterior:
     def __init__(self, prior, stats):
@@ -286,7 +545,26 @@ class Posterior:
         return self.prior.unstack(R)
     
     
-    
+    def ml_prior_update(self):
+        V = []
+        Gamma = []
+        n = self.n
+        for sumi, vmfi in zip(self.sums, self.prior.vmf):
+            v, gamma = vmf_ml_estimate(n, sumi, np.log(vmfi.k), vmfi.logC)    
+            V.append(v)
+            Gamma.append(gamma)
+        return V, np.array(Gamma)    
+            
+    def prior_update(self, kappa_priors = None):
+        if kappa_priors is None: return self.ml_prior_update()
+        V = []
+        Gamma = []
+        n = self.n
+        for sumi, vmfi, pi in zip(self.sums, self.prior.vmf, kappa_priors):
+            v, gamma = vmf_map_estimate(n, sumi, pi, vmfi.logC, np.log(vmfi.kappa))    
+            V.append(v)
+            Gamma.append(gamma)
+        return V, np.array(Gamma)    
         
 if __name__ == "__main__":
 
