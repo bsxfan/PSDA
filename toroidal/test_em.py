@@ -1,6 +1,6 @@
 import numpy as np
 
-from toroidal.psdamodel import ToroidalPSDA
+from toroidal.psdamodel import ToroidalPSDA, train_ml
 
 import matplotlib.pyplot as plt
 from subsphere.pca import Globe
@@ -18,9 +18,11 @@ gamma_y = np.full(n-m,1)
 kappa = 2000
 snr = 10
 w0 = np.array([np.sqrt(snr),1])
-model0 = ToroidalPSDA.random(D, d, w0, kappa, gamma_z, gamma_y)
+gamma = np.hstack([gamma_z,gamma_y])
+model0 = ToroidalPSDA.random(D, d, m, w0, kappa, gamma)
 
 # generate training data
+print('sampling training data')
 X, Y, Z, Mu, labels = model0.sample(1000,100)
 plabels, counts = one_hot.pack(labels, return_counts=True)
 L = one_hot.scipy_sparse_1hot_cols(plabels)
@@ -41,17 +43,16 @@ ax.set_zlim([-1,1])
 #plt.show()
 
 
-snr = 1
-w = np.array([np.sqrt(snr),1])
-#gamma_z_init = gamma_z 
-gamma_z_init = np.full(m,1)
-gamma_y_init = np.full(n-m,10)
-#gamma_y_init = gamma_y 
-model = ToroidalPSDA.random(D, d, w, kappa/5, gamma_z_init, gamma_y_init)
-for i in range(50):
-    print(f"em iter {i}: w = {model.E.w}, kappa = {model.kappa}")
-    model = model.em_iter(X, Xsum)
-print(f"\ncf true   w = {model0.E.w}, kappa = {model0.kappa}")
+# model = ToroidalPSDA.random(D, d, m)
+# for i in range(50):
+#     print(f"em iter {i}: w = {model.E.w}, kappa = {model.kappa}")
+#     model = model.em_iter(X, Xsum)
+# print(f"\ncf true   w = {model0.E.w}, kappa = {model0.kappa}")
+
+#dh = np.array([1,2])        
+model = train_ml(X, labels, d, m, niters = 50)
+
+
 
 # generate data from trained model
 X, Y, Z, Mu, labels = model.sample(1000,100)

@@ -9,7 +9,9 @@ from psda.vmf_onedim import gvmf, logNormConst
 
 from psda.vmf_map import map_estimate as vmf_map_estimate
 from psda.vmf_map import ml_estimate as vmf_ml_estimate
-from psda.vmf_map import KappaPrior_KL
+from psda.vmf_map import KappaPrior_KL, logkappa_asymptote_intersection
+
+from nlib.phonexia.embeddings import one_hot
 
 
 
@@ -180,6 +182,7 @@ class Prior:
         self.vmf = [gvmf(logCd[di],vi,gammai) \
                     for di,gammai, vi in zip(d,gamma,v)]
         self.gamma_v = np.hstack([vmfi.kmu for vmfi in self.vmf])
+        self.uniform = all(np.atleast_1d(gamma)==0)
 
     def unstack(self,Z):
         """
@@ -247,8 +250,10 @@ class ToroidalPSDA:
         self.gamma = gamma
         self.v = v
 
-
-        if m>0:
+        self.hasspeakers = hasspeakers = m>0
+        self.haschannels = haschannels = m<n
+        
+        if hasspeakers:
             self.Ez = Embedding(w[:m],K[:m])
             self.zprior = Prior(gamma[:m],v[:m])
         else:
@@ -256,7 +261,7 @@ class ToroidalPSDA:
             self.Ez = None
 
 
-        if m<n:
+        if haschannels:
             self.Ey = Embedding(w[m:],K[m:])
             self.yprior = Prior(gamma[m:],v[m:])
         else:
@@ -402,22 +407,49 @@ class ToroidalPSDA:
     
     
     @classmethod
-    def random(cls, D, d, w, kappa, gamma_z = None, gamma_y = None):
+    def random(cls, D, d, m, w=None, kappa=None, gamma=None):
         """
         Construct a model with some given and some random parameters.
+        
+        inputs:
+            
+            D: observation dimensionality
+
+            d: (n,) hidden variable dimensionalities
+
+            m: number of speaker variables: 0 <= m <= n
+            
+            w: (n,) positive hidden variable combination weights
+                    does not need to be length-normed, this will be done here
+                    if None, weights are made uniform
+                    
+            kappa > 0: observation VMF noise concentration
+                       if None, will be set to a somewhat concentrated value
+                       
+            gamma: (n,) concentrations for hidden variables
+                        negative values are 'flagged' and will be reset to 
+                            somewhat dispersed (smallish positive) values
+                        if None all gammas will be treated as flagged and be 
+                            reset as above    
+                        
+                
+                
         """
-        assert gamma_z is not None or gamma_y is not None
-        if gamma_z is None:
-            gamma = gamma_y
-            m = 0
-        elif gamma_y is None:
-            gamma = gamma_z
-            m = len(gamma)
-        else:
-            gamma = np.hstack([gamma_z,gamma_y])
-            m = len(gamma_z)
-        n = len(gamma)    
-        assert len(d) == n
+        def kappa0(dim):
+            if dim==1: return 1.0
+            return np.exp(logkappa_asymptote_intersection(dim))
+        
+        n = len(d)
+        assert 0 <= m <= n
+        assert d.sum() <= D
+        if w is None:
+            w = np.ones(n)
+        if kappa is None:
+            kappa = 10*kappa0(D)
+        if gamma is None: gamma = np.full(n, -1.0)
+        for i in range(n):    
+            if gamma[i] < 0: gamma[i] = kappa0(d[i])/10 
+        assert n == len(w) == len(gamma)
         v = [sample_uniform(di) for di in d]
         E = Embedding.random(w,D,d)
         return cls(kappa,m,E.w,E.K,gamma,v)    
@@ -445,62 +477,84 @@ class ToroidalPSDA:
     
     
     
-    def em_iter(self, X, Xsum, wK_iters = 5, zprior = None, 
-                                             yprior = None,
-                                             kappa_prior = None):
+    def em_iter(self, X, Xsum, wK_iters = 5, kappa_prior = None,
+                                             gammaz_prior = None, 
+                                             gammay_prior = None):
         """
         Do one EM iteration and return a new updated model.
+        
+        Inputs:
         
             X: (n,D)  data
         
             Xsum: (ns,D) first-order stats (data sums) for each of ns speakers 
             
-            zprior: 
-                if False, the VMF priors for the z's are not updated
-                if None, the VMF priors are ML-updated
-                if zprior is a list of priors for the concentrations, do MAP
-                   updates
-            
-            yprior: 
-                if False, the VMF priors for the y's are not updated
-                if None, the VMF priors are ML-updated
-                if yprior is a list of priors for the concentrations, do MAP
-                   updates
-            
             kappa_prior: 
                 if False, kappa is not updated
                 if None, kappa is ML-updated
                 if kappa_prior a prior for kappa, do a MAP update
+
+            gammaz_prior: 
+                if False, the VMF priors for the z's are not updated
+                if None, the VMF priors are ML-updated
+                if gammaz_prior is a list of priors for the concentrations, do MAP
+                   updates
+            
+            gammay_prior: 
+                if False, the VMF priors for the y's are not updated
+                if None, the VMF priors are ML-updated
+                if gammay_prior is a list of priors for the concentrations, do MAP
+                   updates
+            
+                
+                
+        returns: updated ToroidalPSDA        
         """
-        zPost = self.inferZ(Xsum)
-        yPost = self.inferY(X)
-        Rz = zPost.R(Xsum)
-        Ry = yPost.R(X)
-        E, Q = self.E.update([*Rz,*Ry], wK_iters)
+        hasspeakers = self.hasspeakers
+        haschannels = self.haschannels
+        hasboth = hasspeakers and haschannels
+        assert hasspeakers or haschannels
         
-        N = X.shape[0]
-        if kappa_prior is not False:
+        if hasspeakers:
+            zPost = self.inferZ(Xsum)
+            Rz = zPost.R(Xsum)
+        
+        if haschannels:
+            yPost = self.inferY(X)
+            Ry = yPost.R(X)
+        
+        if hasboth:
+            E, Q = self.E.update([*Rz,*Ry], wK_iters)
+        elif hasspeakers:
+            E, Q = self.E.update(Rz, wK_iters)
+        else:  # haschannels
+            E, Q = self.E.update(Ry, wK_iters)
+        
+        
+        do_kappa = kappa_prior is not False
+        do_zprior = self.hasspeakers and gammaz_prior is not False
+        do_yprior = self.haschannels and gammay_prior is not False
+        
+        if do_kappa:
+            N = X.shape[0]
             kappa = self.update_kappa(N,Q, kappa_prior)
         else:
             kappa = self.kappa    
         
-        do_zprior = zprior is not False
-        do_yprior = yprior is not False
-        
         if do_zprior:
-            vz, gammaz = zPost.prior_update(zprior)
+            vz, gammaz = zPost.prior_update(gammaz_prior)
         else:
             vz = self.v[:self.m]      
             gammaz = self.gamma[:self.m]      
         
         if do_yprior:
-            vy, gammay = yPost.prior_update(yprior)
+            vy, gammay = yPost.prior_update(gammay_prior)
         else:
             vy = self.v[self.m:]      
             gammay = self.gamma[self.m:]
+
         v = [*vz,*vy]
         gamma = np.hstack([gammaz,gammay])
-        
         return ToroidalPSDA(kappa, self.m, E.w, E.K, gamma, v)
     
     
@@ -525,8 +579,42 @@ class ToroidalPSDA:
         logkappa = res.x
         return np.exp(logkappa)
     
+    
+    @classmethod
+    def TrainEM(cls, X, Xsum, niters, InitialModel, kappa_prior = None,
+                                      gammaz_prior = None, 
+                                      gammay_prior = None,
+                                      quiet = False):
+        
+        model = InitialModel
+
+        if not model.hasspeakers or model.zprior.uniform: 
+            assert gammaz_prior is False or gammaz_prior is None
+            gammaz_prior = False
+        
+        if not model.haschannels or model.yprior.uniform: 
+            assert gammay_prior is False or gammay_prior is None
+            gammay_prior = False
+        
+        
+        for i in range(niters):
+            model = model.em_iter(X, Xsum, 
+                                  kappa_prior = kappa_prior,
+                                  gammaz_prior = gammaz_prior, 
+                                  gammay_prior = gammay_prior)
+            if not quiet:
+                print(f"em {i}: ")
+        return model        
+        
+    
+    
 class Posterior:
-    def __init__(self, prior, stats):
+    """
+    Stores parameters for the VMF posteriors for a set of hidden variables. 
+    - makes available some posterior expectations 
+    - can do M-step update for the hidden variable priors
+    """
+    def __init__(self, prior:Prior, stats:np.ndarray):
         self.prior = prior
         stats = prior.unstack(stats + prior.gamma_v)
         self.vmf = [gvmf(prior.vmf[i].logC,statsi) \
@@ -555,16 +643,44 @@ class Posterior:
             Gamma.append(gamma)
         return V, np.array(Gamma)    
             
-    def prior_update(self, kappa_priors = None):
-        if kappa_priors is None: return self.ml_prior_update()
+    def prior_update(self, gamma_priors = None):
+        if gamma_priors is None: return self.ml_prior_update()
         V = []
         Gamma = []
         n = self.n
-        for sumi, vmfi, pi in zip(self.sums, self.prior.vmf, kappa_priors):
+        for sumi, vmfi, pi in zip(self.sums, self.prior.vmf, gamma_priors):
             v, gamma = vmf_map_estimate(n, sumi, pi, vmfi.logC, np.log(vmfi.kappa))    
             V.append(v)
             Gamma.append(gamma)
         return V, np.array(Gamma)    
+    
+    
+def train_ml(X, labels, d, m, niters, uniformz = False, uniformy = False, 
+             quiet=False):
+    D = X.shape[-1]
+    n = len(d)
+    assert d.sum() <= D
+    gamma = np.full(n,-1.0)
+    if m>0 and uniformz:
+        gamma[:m] = 0
+    if m<n and uniformy:
+        gamma[m:] = 0
+        
+    plabels, counts = one_hot.pack(labels, return_counts=True)
+    L = one_hot.scipy_sparse_1hot_cols(plabels)
+    Xsum = L @ X
+        
+    model = ToroidalPSDA.random(D,d,m,gamma=gamma)
+    model = ToroidalPSDA.TrainEM(X, Xsum, niters, model)
+    return model
+    
+
+def train_ml(X, labels, d, m, niters, uniformz = False, uniformy = False, 
+             quiet=False):
+
+
+
+
         
 if __name__ == "__main__":
 
@@ -754,13 +870,11 @@ if __name__ == "__main__":
     D = 3
     m, n = 2,3
     d = np.array([1,1,1])        
-    gamma_z = np.zeros(m)
-    gamma_y = np.zeros(n-m)
     kappa = 5
 
     snr = 0.1
     w = np.array([np.sqrt(snr),np.sqrt(snr),1])
-    model = ToroidalPSDA.random(D, d, w, kappa, gamma_z, gamma_y)
+    model = ToroidalPSDA.random(D, d, m, w, kappa)
     
     X, Y, Z, Mu, labels = model.sample(100,10)
     Ze = model.Ez.embed(Z)

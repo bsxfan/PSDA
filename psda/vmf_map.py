@@ -89,6 +89,9 @@ class GammaPrior:
 
 class KappaPrior_KL:
     def __init__(self,logC,kappa0,pseudo_count):
+        if np.isscalar(logC):
+            dim = logC
+            logC = logNormConst(dim)
         self.logC = logC
         dim = logC.dim
         self.mu = mu = sample_uniform(dim)
