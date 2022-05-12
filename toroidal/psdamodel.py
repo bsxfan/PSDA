@@ -435,9 +435,7 @@ class ToroidalPSDA:
                 
                 
         """
-        def kappa0(dim):
-            if dim==1: return 1.0
-            return np.exp(logkappa_asymptote_intersection(dim))
+        kappa0 = lambda dim: np.exp(logkappa_asymptote_intersection(dim))
         
         n = len(d)
         assert 0 <= m <= n
@@ -477,9 +475,9 @@ class ToroidalPSDA:
     
     
     
-    def em_iter(self, X, Xsum, wK_iters = 5, kappa_prior = None,
-                                             gammaz_prior = None, 
-                                             gammay_prior = None):
+    def em_iter(self, X, Xsum = None, wK_iters = 5, kappa_prior = None,
+                                                    gammaz_prior = None, 
+                                                    gammay_prior = None):
         """
         Do one EM iteration and return a new updated model.
         
@@ -516,6 +514,7 @@ class ToroidalPSDA:
         assert hasspeakers or haschannels
         
         if hasspeakers:
+            assert Xsum is not None
             zPost = self.inferZ(Xsum)
             Rz = zPost.R(Xsum)
         
@@ -581,12 +580,13 @@ class ToroidalPSDA:
     
     
     @classmethod
-    def TrainEM(cls, X, Xsum, niters, InitialModel, kappa_prior = None,
+    def TrainEM(cls, initial_model, niters, X, Xsum = None,  
+                                      kappa_prior = None,
                                       gammaz_prior = None, 
                                       gammay_prior = None,
                                       quiet = False):
         
-        model = InitialModel
+        model = initial_model
 
         if not model.hasspeakers or model.zprior.uniform: 
             assert gammaz_prior is False or gammaz_prior is None
@@ -649,14 +649,27 @@ class Posterior:
         Gamma = []
         n = self.n
         for sumi, vmfi, pi in zip(self.sums, self.prior.vmf, gamma_priors):
-            v, gamma = vmf_map_estimate(n, sumi, pi, vmfi.logC, np.log(vmfi.kappa))    
+            v, gamma = vmf_map_estimate(n, sumi, pi, vmfi.logC, np.log(vmfi.k))    
             V.append(v)
             Gamma.append(gamma)
         return V, np.array(Gamma)    
     
+
+
+def sumX(X,labels):
+    if labels is not None:
+        plabels, counts = one_hot.pack(labels, return_counts=True)
+        L = one_hot.scipy_sparse_1hot_cols(plabels)
+        Xsum = L @ X
+    else:
+        Xsum = None
+    return Xsum    
+
     
-def train_ml(X, labels, d, m, niters, uniformz = False, uniformy = False, 
+def train_ml(d, m, niters, X, labels = None, uniformz = False, uniformy = False, 
              quiet=False):
+    """
+    """
     D = X.shape[-1]
     n = len(d)
     assert d.sum() <= D
@@ -666,28 +679,73 @@ def train_ml(X, labels, d, m, niters, uniformz = False, uniformy = False,
     if m<n and uniformy:
         gamma[m:] = 0
         
-    plabels, counts = one_hot.pack(labels, return_counts=True)
-    L = one_hot.scipy_sparse_1hot_cols(plabels)
-    Xsum = L @ X
+    Xsum = sumX(X,labels)         
+        
         
     model = ToroidalPSDA.random(D,d,m,gamma=gamma)
-    model = ToroidalPSDA.TrainEM(X, Xsum, niters, model)
+    model = ToroidalPSDA.TrainEM(model, niters, X, Xsum, quiet=quiet)
     return model
     
 
-def train_ml(X, labels, d, m, niters, uniformz = False, uniformy = False, 
-             quiet=False):
+def train_map(d, m, niters, X, labels = None, 
+              kappa_prior = None ,
+              gammaz_prior = None,
+              gammay_prior = None,
+              quiet=False):
+    """
+    inputs:
+        
+        d: (n,) hidden factor dims 
 
+        m: number of speaker factors
 
+        niters: number of EM iterations
 
+        X: (t,D) training data
 
+        labels: speaker labels, 
+                None if there are no speaker factors
+                
+        kappa_prior: prior on VMF concentration, for D-dim observation noise
+                     can be None for ML estimate of this parameter
+                     
+        gammaz_prior: list of priors on VMF concentrations for the speaker
+                      factors 
+                      if None, zero concentrations are enforced, for uniform
+                               distributions
+                
+        gammay_prior: list of priors on VMF concentrations for the channel
+                      factors 
+                      if None, zero concentrations are enforced, for uniform
+                               distributions
+    """
+
+    D = X.shape[-1]
+    n = len(d)
+    assert d.sum() <= D
+
+    Xsum = sumX(X,labels)         
+
+    kappa = None if kappa_prior is None else kappa_prior.rep
+
+    if m == 0: assert gammaz_prior is None
+    if m == n: assert gammay_prior is None
+    gamma = np.zeros(n)
+    if gammaz_prior is not None:
+        gamma[:m] = [pi.rep for pi in gammaz_prior]
+    if gammay_prior is not None:
+        gamma[m:] = [pi.rep for pi in gammay_prior]
+
+    model = ToroidalPSDA.random(D,d,m,kappa=kappa,gamma=gamma)
+    model = ToroidalPSDA.TrainEM(model, niters, X, Xsum, kappa_prior, 
+                                 gammaz_prior, gammay_prior, quiet)
+    return model
         
 if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
     from subsphere.pca import Globe
     
-    from nlib.phonexia.embeddings import one_hot
     
     # if False:                # test and demo data synthesis
     #     D = 3

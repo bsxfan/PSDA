@@ -1,16 +1,18 @@
 import numpy as np
 
+from scipy.optimize import minimize_scalar
+from scipy.special import psi, gammaln
+
 from psda.vmf_onedim import logNormConst, gvmf
 from psda.vmf import decompose
 from psda.besseli import k_and_logk
 
-from scipy.optimize import minimize_scalar
-from scipy.special import psi, gammaln
 
+from psda.vmf_sampler import sample_uniform
 
 
 def logkappa_asymptote_intersection(dim):
-    assert dim > 1
+    if dim ==1: return 1/10 # convenient patch: the function is not defined here
     nu = dim/2-1
     return ( nu*np.log(2) + gammaln(nu+1) - np.log(2*np.pi)/2 ) / (nu + 0.5)     
 
@@ -56,11 +58,10 @@ class GammaPrior:
     @classmethod
     def assign(cls,dim,meanfactor,beta):
         """
-        When dim >=2. the gamma prior mean for kappa is set at meanfactor*k0, 
+        The gamma prior mean for kappa is set at meanfactor*k0, 
         where k0 depends on dim and is neutral in the sense of being neither 
         concentrated nor uniform. 
         
-        When dim=1, k0 is arbitrarily set to 1.
         
         beta is inversely proportional to the variance
         
@@ -78,12 +79,8 @@ class GammaPrior:
         
         
         """
-        if dim >= 2:
-            kappa = np.exp(logkappa_asymptote_intersection(dim))
-        else:
-            assert dim == 1
-            kappa = 1
-        return cls(kappa*meanfactor,beta)
+        kappa0 = np.exp(logkappa_asymptote_intersection(dim))
+        return cls(kappa0*meanfactor,beta)
         
 
 
@@ -117,13 +114,9 @@ class KappaPrior_KL:
     @classmethod
     def assign(cls, logC, modefactor, pseudo_count):
         """
-        When dim >=2. the prior mode for kappa is set at modefactor*k0, 
+        The prior mode for kappa is set at modefactor*k0, 
         where k0 depends on dim and is neutral in the sense of being neither 
         concentrated nor uniform. 
-        
-        When dim=1, k0 is arbitrarily set to 1.
-        
-        
         
         inputs:
             
@@ -141,12 +134,12 @@ class KappaPrior_KL:
         
         
         """
-        dim = logC.dim
-        if dim >= 2:
-            kappa0 = np.exp(logkappa_asymptote_intersection(dim))
+        if np.isscalar(logC):
+            dim = logC
+            logC = logNormConst(dim)
         else:
-            assert dim == 1
-            kappa0 = 1
+            dim = logC.dim
+        kappa0 = np.exp(logkappa_asymptote_intersection(dim))
         return cls(logC, kappa0*modefactor, pseudo_count)
     
     
@@ -196,7 +189,6 @@ def ml_estimate(n, sumx, logkappa, logC = None):
 if __name__ == "__main__":
     
     from psda.vmf_onedim import gvmf, logNormConst
-    from psda.vmf_sampler import sample_uniform
     
     from subsphere.pca import Globe
     

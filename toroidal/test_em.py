@@ -1,6 +1,8 @@
 import numpy as np
 
-from toroidal.psdamodel import ToroidalPSDA, train_ml
+from toroidal.psdamodel import ToroidalPSDA, train_ml, train_map, \
+                               KappaPrior_KL
+
 
 import matplotlib.pyplot as plt
 from subsphere.pca import Globe
@@ -30,13 +32,13 @@ Xsum = L @ X
 
 # let's look at it
 fig = plt.figure()
-ax = fig.add_subplot(121, projection='3d')
+ax = fig.add_subplot(221, projection='3d')
 Globe.plotgrid(ax)
 ax.scatter(*X.T, color='g', marker='.',label='X')
 Ze = model0.Ez.embed(Z)
 ax.scatter(*Ze.T, color='r', marker='.',label='Ze')
 ax.legend()
-ax.set_title(f'Training Data\nzdim = 1, ydim = 2, snr = 1, kappa={kappa}')
+ax.set_title(f'Training Data\nzdim = {d[0]}, ydim = {d[1]}, snr = {snr}, kappa={kappa}')
 ax.set_xlim([-1,1])
 ax.set_ylim([-1,1])
 ax.set_zlim([-1,1])
@@ -50,7 +52,9 @@ ax.set_zlim([-1,1])
 # print(f"\ncf true   w = {model0.E.w}, kappa = {model0.kappa}")
 
 #dh = np.array([1,2])        
-model = train_ml(X, labels, d, m, niters = 50)
+print("ML training")
+niters = 50
+model = train_ml(d, m, niters, X, labels)
 
 
 
@@ -59,16 +63,44 @@ X, Y, Z, Mu, labels = model.sample(1000,100)
 #plabels, counts = one_hot.pack(labels, return_counts=True)
 
 # let's look at it
-ax = fig.add_subplot(122, projection='3d')
+ax = fig.add_subplot(222, projection='3d')
+ax.set_title("Samples from ML model")
 Globe.plotgrid(ax)
 ax.scatter(*X.T, color='g', marker='.',label='X')
 Ze = model.Ez.embed(Z)
 ax.scatter(*Ze.T, color='r', marker='.',label='Ze')
 ax.legend()
-ax.set_title('New data from trained model')
 ax.set_xlim([-1,1])
 ax.set_ylim([-1,1])
 ax.set_zlim([-1,1])
+
+
+print("MAP training")
+niters = 50
+kappa_prior = KappaPrior_KL.assign(D,1,1)
+gamma_z_prior = [KappaPrior_KL.assign(d[0],1,100)]
+gamma_y_prior = [KappaPrior_KL.assign(d[1],1,1)]
+model = train_map(d, m, niters, X, labels,kappa_prior,
+                  gamma_z_prior, gamma_y_prior)
+
+# generate data from trained model
+X, Y, Z, Mu, labels = model.sample(1000,100)
+#plabels, counts = one_hot.pack(labels, return_counts=True)
+
+# let's look at it
+ax = fig.add_subplot(223, projection='3d')
+ax.set_title("Samples from MAP model")
+Globe.plotgrid(ax)
+ax.scatter(*X.T, color='g', marker='.',label='X')
+Ze = model.Ez.embed(Z)
+ax.scatter(*Ze.T, color='r', marker='.',label='Ze')
+ax.legend()
+ax.set_xlim([-1,1])
+ax.set_ylim([-1,1])
+ax.set_zlim([-1,1])
+
+
+
 plt.show()
 
 
