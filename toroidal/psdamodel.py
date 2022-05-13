@@ -183,6 +183,9 @@ class Prior:
                     for di,gammai, vi in zip(d,gamma,v)]
         self.gamma_v = np.hstack([vmfi.kmu for vmfi in self.vmf])
         self.uniform = all(np.atleast_1d(gamma)==0)
+        
+    def margloglh_term(self):
+        return sum([vmfi.logCk for vmfi in self.vmf])
 
     def unstack(self,Z):
         """
@@ -201,7 +204,8 @@ class Prior:
         return np.hstack([vmfi.sample(t) for vmfi in self.vmf])
 
 
-
+    def gammaprior_loglh(self, gamma_prior):
+        return sum([pi.loglh(vi.k) for pi, vi in zip(gamma_prior, self.vmf)])
 
 
 class ToroidalPSDA:
@@ -268,8 +272,19 @@ class ToroidalPSDA:
             self.yprior = None
             self.Ey = None
         
-        
-        
+    def margloglh_term(self,t,ns=None):
+        hasspeakers, haschannels = self.hasspeakers, self.haschannels
+        assert hasspeakers or ns is None
+        loglh = t*self.logCD(self.kappa)
+        if hasspeakers:
+            loglh += ns*self.zprior.margloglh_term()
+        if haschannels:
+            loglh += t*self.yprior.margloglh_term()
+        return loglh
+    
+    
+    
+    
             
             
     def sample_speakers(self,ns):
@@ -513,14 +528,28 @@ class ToroidalPSDA:
         hasboth = hasspeakers and haschannels
         assert hasspeakers or haschannels
         
+        ns = None if Xsum is None else Xsum.shape[0]
+        t = X.shape[0]
+        obj = self.margloglh_term(t,ns)
+        
+        
+        if kappa_prior is not None and kappa_prior is not False:
+            obj += kappa_prior.loglh(self.kappa)
+        
         if hasspeakers:
             assert Xsum is not None
             zPost = self.inferZ(Xsum)
             Rz = zPost.R(Xsum)
-        
+            obj -= zPost.margloglh_term()
+            if gammaz_prior is not None and gammaz_prior is not None:
+                obj += self.zprior.gammaprior_loglh(gammaz_prior)
+            
         if haschannels:
             yPost = self.inferY(X)
             Ry = yPost.R(X)
+            obj -= yPost.margloglh_term()
+            if gammay_prior is not None and gammay_prior is not None:
+                obj += self.zprior.gammaprior_loglh(gammay_prior)
         
         if hasboth:
             E, Q = self.E.update([*Rz,*Ry], wK_iters)
@@ -554,7 +583,7 @@ class ToroidalPSDA:
 
         v = [*vz,*vy]
         gamma = np.hstack([gammaz,gammay])
-        return ToroidalPSDA(kappa, self.m, E.w, E.K, gamma, v)
+        return ToroidalPSDA(kappa, self.m, E.w, E.K, gamma, v), obj
     
     
     def ml_update_kappa(self,N,Q):
@@ -587,6 +616,7 @@ class ToroidalPSDA:
                                       quiet = False):
         
         model = initial_model
+        obj = []
 
         if not model.hasspeakers or model.zprior.uniform: 
             assert gammaz_prior is False or gammaz_prior is None
@@ -598,13 +628,14 @@ class ToroidalPSDA:
         
         
         for i in range(niters):
-            model = model.em_iter(X, Xsum, 
+            model, mllh = model.em_iter(X, Xsum, 
                                   kappa_prior = kappa_prior,
                                   gammaz_prior = gammaz_prior, 
                                   gammay_prior = gammay_prior)
             if not quiet:
-                print(f"em {i}: ")
-        return model        
+                print(f"em {i}: {mllh}")
+            obj.append(mllh)    
+        return model, obj        
         
     
     
@@ -623,6 +654,11 @@ class Posterior:
         self.mean = mean = np.hstack(means)
         self.n = mean.shape[0]
         self.sums = [vmfi.mean().sum(axis=0) for vmfi in self.vmf]
+        
+        
+    def margloglh_term(self):
+        return sum([vmfi.logCk.sum() for vmfi in self.vmf])
+        
         
     def R(self, X):
         """
@@ -683,8 +719,8 @@ def train_ml(d, m, niters, X, labels = None, uniformz = False, uniformy = False,
         
         
     model = ToroidalPSDA.random(D,d,m,gamma=gamma)
-    model = ToroidalPSDA.TrainEM(model, niters, X, Xsum, quiet=quiet)
-    return model
+    model, obj = ToroidalPSDA.TrainEM(model, niters, X, Xsum, quiet=quiet)
+    return model, obj
     
 
 def train_map(d, m, niters, X, labels = None, 
@@ -737,9 +773,9 @@ def train_map(d, m, niters, X, labels = None,
         gamma[m:] = [pi.rep for pi in gammay_prior]
 
     model = ToroidalPSDA.random(D,d,m,kappa=kappa,gamma=gamma)
-    model = ToroidalPSDA.TrainEM(model, niters, X, Xsum, kappa_prior, 
+    model, obj = ToroidalPSDA.TrainEM(model, niters, X, Xsum, kappa_prior, 
                                  gammaz_prior, gammay_prior, quiet)
-    return model
+    return model, obj
         
 if __name__ == "__main__":
 

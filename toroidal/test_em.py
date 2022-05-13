@@ -54,7 +54,7 @@ ax.set_zlim([-1,1])
 #dh = np.array([1,2])        
 print("ML training")
 niters = 50
-model = train_ml(d, m, niters, X, labels)
+model, mlobj = train_ml(d, m, niters, X, labels)
 
 
 
@@ -80,7 +80,7 @@ niters = 50
 kappa_prior = KappaPrior_KL.assign(D,1,1)
 gamma_z_prior = [KappaPrior_KL.assign(d[0],1,100)]
 gamma_y_prior = [KappaPrior_KL.assign(d[1],1,1)]
-model = train_map(d, m, niters, X, labels,kappa_prior,
+model, mapobj = train_map(d, m, niters, X, labels,kappa_prior,
                   gamma_z_prior, gamma_y_prior)
 
 # generate data from trained model
@@ -99,7 +99,11 @@ ax.set_xlim([-1,1])
 ax.set_ylim([-1,1])
 ax.set_zlim([-1,1])
 
-
+ax = fig.add_subplot(224)
+ax.plot(mlobj,label='ML obj')
+ax.plot(mapobj,label='MAP obj')
+ax.legend()
+ax.grid()
 
 plt.show()
 
