@@ -272,7 +272,7 @@ class ToroidalPSDA:
             self.yprior = None
             self.Ey = None
         
-    def margloglh_term(self,t,ns=None):
+    def margloglh_term(self, t, ns=None):
         hasspeakers, haschannels = self.hasspeakers, self.haschannels
         assert hasspeakers or ns is None
         loglh = t*self.logCD(self.kappa)
@@ -281,9 +281,6 @@ class ToroidalPSDA:
         if haschannels:
             loglh += t*self.yprior.margloglh_term()
         return loglh
-    
-    
-    
     
             
             
@@ -488,6 +485,29 @@ class ToroidalPSDA:
         kappa = self.kappa
         return Posterior(self.yprior,kappa*self.Ey.project(X))
     
+    def margloglh(self, X, Xsum=None, labels = None):
+        hasspeakers = self.hasspeakers
+        haschannels = self.haschannels
+        assert hasspeakers or haschannels
+        assert hasspeakers or Xsum is None
+        
+        ns = None if Xsum is None else Xsum.shape[0]
+        t = X.shape[0]
+        obj = self.margloglh_term(t,ns)
+        
+        if hasspeakers:
+            if Xsum is None:
+                assert labels is not None
+                Xsum = sumX(X, labels)
+            zPost = self.inferZ(Xsum)
+            obj -= zPost.margloglh_term()
+            
+        if haschannels:
+            yPost = self.inferY(X)
+            obj -= yPost.margloglh_term()
+
+        return obj 
+            
     
     
     def em_iter(self, X, Xsum = None, wK_iters = 5, kappa_prior = None,
@@ -541,14 +561,14 @@ class ToroidalPSDA:
             zPost = self.inferZ(Xsum)
             Rz = zPost.R(Xsum)
             obj -= zPost.margloglh_term()
-            if gammaz_prior is not None and gammaz_prior is not None:
+            if gammaz_prior is not None and gammaz_prior is not False:
                 obj += self.zprior.gammaprior_loglh(gammaz_prior)
             
         if haschannels:
             yPost = self.inferY(X)
             Ry = yPost.R(X)
             obj -= yPost.margloglh_term()
-            if gammay_prior is not None and gammay_prior is not None:
+            if gammay_prior is not None and gammay_prior is not False:
                 obj += self.zprior.gammaprior_loglh(gammay_prior)
         
         if hasboth:
@@ -638,6 +658,61 @@ class ToroidalPSDA:
         return model, obj        
         
     
+class Scoring:
+    def __init__(self, model: ToroidalPSDA):
+        self.zprior = zprior = model.zprior
+        self.uniform = uniform  = zprior.uniform
+        self.wK = wK = model.Ez.L          # (D, Tz)
+        self.kappa = model.kappa
+        if not uniform:
+            self.nvec = nvec = zprior.gamma_v  # (Tz, )
+            self.wKn =  wK @ nvec              # (D, )  
+            self.nnormsq = np.array([ni @ ni for ni in zprior.unstack(nvec)]) 
+            
+    def sumlogC(self, ksq):
+        vmf = self.zprior.vmf
+        k = np.sqrt(ksq)
+        return sum([vmfi.logC(ki) for ki, vmfi in zip(k, vmf)])
+    
+    def unstack(self, M):
+        return self.zprior.unstack(M)
+            
+        
+    def prep(self,Xsum):
+        """
+        Xsum: (t,D)
+        """
+        return Side(self,Xsum)
+        
+        
+        # kappa, unstack = self.kappa, self.unstack
+        # XwK = Xsum @ self.wK               # (t,Tz)
+        # c = kappa*np.array(\
+        #    [(Mi**2).sum(axis=-1) for Mi in unstack(XwK)])
+        # if not self.uniform:
+        #     c += self.nnormsq  + (2*kappa)*(Xsum @ self.wKn) 
+        #     return Side(self,c,XwK,self.nnormsq)
+        # else:
+        #     return Side(self,c,XwK)
+
+class Side:
+    def __init__(self,sc,Xsum):
+        self.uniform = uniform = sc.uniform
+        self.XwK = XwK = sc.unpack(Xsum @ self.wK)
+        self.normsq = normsq = kappa**2*np.array(\
+                                   [(Mi**2).sum(axis=-1) for Mi in XwK])
+        if not uniform:
+            normsq += sc.nnormsq + (2*kappa)  
+
+    def sumlogC(self,ksq):
+        return self.scoring.sumlogC(ksq)
+
+    def llrMatrix(self,rhs):
+        nnormsq = self.nnormsq
+        uniform = nnormsq is None
+        
+            
+    
     
 class Posterior:
     """
@@ -703,22 +778,26 @@ def sumX(X,labels):
 
     
 def train_ml(d, m, niters, X, labels = None, uniformz = False, uniformy = False, 
-             quiet=False):
+             initial_model = None, quiet=False):
     """
     """
     D = X.shape[-1]
     n = len(d)
     assert d.sum() <= D
-    gamma = np.full(n,-1.0)
-    if m>0 and uniformz:
-        gamma[:m] = 0
-    if m<n and uniformy:
-        gamma[m:] = 0
-        
+
     Xsum = sumX(X,labels)         
-        
-        
-    model = ToroidalPSDA.random(D,d,m,gamma=gamma)
+
+
+    if initial_model is None:
+        gamma = np.full(n,-1.0)
+        if m>0 and uniformz:
+            gamma[:m] = 0
+        if m<n and uniformy:
+            gamma[m:] = 0
+        model = ToroidalPSDA.random(D,d,m,gamma=gamma)
+    else:
+        model = initial_model
+
     model, obj = ToroidalPSDA.TrainEM(model, niters, X, Xsum, quiet=quiet)
     return model, obj
     
