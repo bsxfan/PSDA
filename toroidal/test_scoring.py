@@ -19,7 +19,7 @@ gamma_z = np.full(m,5.0)
 #gamma_y = np.zeros(n-m)
 gamma_y = np.full(n-m,1)
 kappa = 1000
-snr = 10
+snr = 1
 w0 = np.array([np.sqrt(snr),np.sqrt(snr),1])
 gamma = np.hstack([gamma_z,gamma_y])
 model0 = ToroidalPSDA.random(D, d, m, w0, kappa, gamma)
@@ -48,4 +48,19 @@ non = left.llr(right2)
 eer, cllr, mincllr = tarnon_2_eer_cllr_mincllr(tar,non)
 print("toroidal eer, Cllr, minCllr:\n",eer,cllr,mincllr)
 
+
+print('\nTesting matrix scoring:')
+ns = 100
+Z = model0.sample_speakers(ns)
+E = model0.sample_data(Z,np.arange(ns),model0.sample_channels(ns))
+labels = np.arange(ns).repeat(10)
+t = len(labels)
+T = model0.sample_data(Z,labels,model0.sample_channels(t))
+left = sc.side(E)
+right = sc.side(T)
+llr = left.llrMatrix(right)
+tar = np.arange(ns).reshape(-1,1) == labels
+non = np.logical_not(tar)
+eer, cllr, mincllr = tarnon_2_eer_cllr_mincllr(llr[tar],llr[non])
+print("toroidal eer, Cllr, minCllr:\n",eer,cllr,mincllr)
 
