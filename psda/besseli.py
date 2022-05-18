@@ -244,7 +244,12 @@ class LogBesselI:
             if logk is not None:
                  logk = np.array([logk])
             return self.__call__(k,logk,exp_scale)[0]
-
+        elif k.ndim>1:
+            sh = k.shape
+            if logk is not None: logk = logk.ravel()
+            y = self.__call__(k.ravel(),logk,exp_scale)
+            return y.reshape(sh)
+        
         assert all(k >= 0)
 
         # try ive for all k

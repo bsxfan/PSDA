@@ -336,21 +336,21 @@ class ToroidalPSDA:
         """
         
         if Z is not None:
-            assert self.m > 0
+            assert self.hasspeakers
             Z = self.Ez.embed(Z)
             if labels is not None: 
                 Z = Z[labels,:]
             elif Y is not None:
                 assert Z.shape[0] == Y.shape[0]
         else:
-            assert self.m == 0
+            assert not self.hasspeakers
             assert labels is None
             Z = 0
         if Y is not None:
-            assert self.m < self.n
+            assert self.haschannels
             Y = self.Ey.embed(Y)
-        else:  
-            assert self.m == self.n
+        else:  # Y is None
+            assert not self.haschannels
             Y = 0
         Mu = Z + Y
         if kappa is None: kappa = self.kappa
@@ -662,6 +662,7 @@ class Scoring:
     def __init__(self, model: ToroidalPSDA, fast = False):
         kappa = model.kappa
         self.m = m = model.m
+        self.fast = fast
         assert m >= 1
         self.zprior = zprior = model.zprior
         self.uniform = uniform  = zprior.uniform
@@ -713,10 +714,11 @@ class Side:
         """
         Xsum: (t, D)
         """
+        self.sc = sc
         self.t = Xsum.shape[0]
         self.m = sc.m
         self.uniform = uniform = sc.uniform
-        self.XP = XP = sc.unpack(Xsum @ sc.P)             # [(t,di)]
+        self.XP = XP = sc.unstack(Xsum @ sc.P)             # [(t,di)]
         self.normsq = np.array([(XPi**2).sum(axis=-1) \
                                 for XPi in XP])           # (m,t)
         if not uniform:
@@ -730,14 +732,14 @@ class Side:
     def postdenMatrix(self,rhs,i):
         left = self.normsq[i,:].reshape(-1,1)
         right = rhs.normsq0[i,:]
-        ksq = self.XP[i] @ rhs.XP[i].T + left + right
+        ksq = 2*(self.XP[i] @ rhs.XP[i].T) + left + right
         logk = np.log(ksq) / 2
         return self.sc.logC(logk,i)
 
     def postden(self,rhs,i):
         left = self.normsq[i,:]
         right = rhs.normsq0[i,:]
-        ksq = (self.XP[i] * rhs.XP[i]).sum(axis=-1) + left + right
+        ksq = (self.XP[i] * rhs.XP[i]).sum(axis=-1)*2 + left + right
         logk = np.log(ksq) / 2
         return self.sc.logC(logk,i)
 
@@ -750,9 +752,9 @@ class Side:
         return llr    
         
     def llr(self,rhs):
-        llr = self.num + rhs.num - self.sc.priorden
+        llr = (self.num + rhs.num - self.sc.priorden).ravel()
         for i in range(self.m):
-            llr -= self.postden(self,rhs,i)
+            llr -= self.postden(rhs,i)
         return llr    
             
     
