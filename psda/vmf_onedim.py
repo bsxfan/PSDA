@@ -26,9 +26,15 @@ class LogNormConstOneDim:
     def __init__(self): 
         self.dim = 1
 
-    def __call__(cls, k=None, logk=None):
+    def __call__(cls, k=None, logk=None, fast = True, exp_scale = False):
+        """
+        fast is ignored, it is fast already
+        """
+        
         k, logk = k_and_logk(k, logk, True, False)
-        return -np.logaddexp(k,-k)
+        y = -np.logaddexp(k,-k)
+        if exp_scale: return y + k
+        return y
 
 class VMFOneDim:
     """

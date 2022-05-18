@@ -659,58 +659,101 @@ class ToroidalPSDA:
         
     
 class Scoring:
-    def __init__(self, model: ToroidalPSDA):
+    def __init__(self, model: ToroidalPSDA, fast = False):
+        kappa = model.kappa
+        self.m = m = model.m
+        assert m >= 1
         self.zprior = zprior = model.zprior
         self.uniform = uniform  = zprior.uniform
-        self.wK = wK = model.Ez.L          # (D, Tz)
-        self.kappa = model.kappa
+        self.P = P = kappa*model.Ez.L      # (D, Tz),   kappa*wi*Ki, stacked
+        self.Plst = Plst = self.unstack(P) # [(D, di)], kappa*wi*Ki, unstacked
         if not uniform:
-            self.nvec = nvec = zprior.gamma_v  # (Tz, )
-            self.wKn =  wK @ nvec              # (D, )  
-            self.nnormsq = np.array([ni @ ni for ni in zprior.unstack(nvec)]) 
+            nvec = zprior.unstack(zprior.gamma_v)
+            self.Pn = np.array([Pi @ nveci \
+                                 for nveci,Pi in zip(nvec,Plst)])      #(m,D)  
+            self.nnormsq = np.array([nveci @ nveci for nveci in nvec]) #(m,)
+            self.priorden = self.sumlogC(self.nnormsq)          # scalar
+        else:    
+            self.priorden = self.sumlogC(np.zeros(model.m))     # scalar
             
     def sumlogC(self, ksq):
+        """
+        input: ksq: k**2   (m, t)
+        output: (t,)
+        """
+        m, fast = self.m, self.fast
         vmf = self.zprior.vmf
-        k = np.sqrt(ksq)
-        return sum([vmfi.logC(ki) for ki, vmfi in zip(k, vmf)])
+        logk = np.log(ksq)/2
+        if m==1: return vmf[0].logC(logk=logk, fast=fast)
+        logk = np.atleast_2d(logk)
+        s = vmf[0].logC(logk=logk[0,:], fast=fast)
+        for i in range(1,m):
+            s += vmf[i].logC(logk=logk[i,:], fast=fast)
+        return s    
+
+
+    def logC(self, logk, i):
+        return self.zprior.vmf[i].logC(logk=logk, fast=self.fast)
+
+
     
     def unstack(self, M):
         return self.zprior.unstack(M)
             
         
-    def prep(self,Xsum):
+    def side(self,Xsum):
         """
         Xsum: (t,D)
         """
         return Side(self,Xsum)
         
-        
-        # kappa, unstack = self.kappa, self.unstack
-        # XwK = Xsum @ self.wK               # (t,Tz)
-        # c = kappa*np.array(\
-        #    [(Mi**2).sum(axis=-1) for Mi in unstack(XwK)])
-        # if not self.uniform:
-        #     c += self.nnormsq  + (2*kappa)*(Xsum @ self.wKn) 
-        #     return Side(self,c,XwK,self.nnormsq)
-        # else:
-        #     return Side(self,c,XwK)
 
 class Side:
-    def __init__(self,sc,Xsum):
+    def __init__(self, sc:Scoring, Xsum:np.ndarray):
+        """
+        Xsum: (t, D)
+        """
+        self.t = Xsum.shape[0]
+        self.m = sc.m
         self.uniform = uniform = sc.uniform
-        self.XwK = XwK = sc.unpack(Xsum @ self.wK)
-        self.normsq = normsq = kappa**2*np.array(\
-                                   [(Mi**2).sum(axis=-1) for Mi in XwK])
+        self.XP = XP = sc.unpack(Xsum @ sc.P)             # [(t,di)]
+        self.normsq = np.array([(XPi**2).sum(axis=-1) \
+                                for XPi in XP])           # (m,t)
         if not uniform:
-            normsq += sc.nnormsq + (2*kappa)  
+            self.normsq0 = self.normsq + 2*(sc.Pn @ Xsum.T)      # (m,t) + (m,t)
+            self.normsq = self.normsq0 + sc.nnormsq.reshape(-1,1)# (m,t) + (m,1) 
+        else:
+            self.normsq0 = self.normsq                           # (m,t)    
+        self.num = sc.sumlogC(self.normsq)                       # (t,)
 
-    def sumlogC(self,ksq):
-        return self.scoring.sumlogC(ksq)
+
+    def postdenMatrix(self,rhs,i):
+        left = self.normsq[i,:].reshape(-1,1)
+        right = rhs.normsq0[i,:]
+        ksq = self.XP[i] @ rhs.XP[i].T + left + right
+        logk = np.log(ksq) / 2
+        return self.sc.logC(logk,i)
+
+    def postden(self,rhs,i):
+        left = self.normsq[i,:]
+        right = rhs.normsq0[i,:]
+        ksq = (self.XP[i] * rhs.XP[i]).sum(axis=-1) + left + right
+        logk = np.log(ksq) / 2
+        return self.sc.logC(logk,i)
+
+
 
     def llrMatrix(self,rhs):
-        nnormsq = self.nnormsq
-        uniform = nnormsq is None
+        llr = self.num.reshape(-1,1) + rhs.num - self.sc.priorden
+        for i in range(self.m):
+            llr -= self.postdenMatrix(self,rhs,i)
+        return llr    
         
+    def llr(self,rhs):
+        llr = self.num + rhs.num - self.sc.priorden
+        for i in range(self.m):
+            llr -= self.postden(self,rhs,i)
+        return llr    
             
     
     
