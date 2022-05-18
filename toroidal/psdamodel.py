@@ -685,7 +685,7 @@ class Scoring:
         m, fast = self.m, self.fast
         vmf = self.zprior.vmf
         logk = np.log(ksq)/2
-        if m==1: return vmf[0].logC(logk=logk, fast=fast)
+        if m==1: return vmf[0].logC(logk=logk.squeeze(), fast=fast)
         logk = np.atleast_2d(logk)
         s = vmf[0].logC(logk=logk[0,:], fast=fast)
         for i in range(1,m):
@@ -752,7 +752,7 @@ class Side:
         return llr    
         
     def llr(self,rhs):
-        llr = (self.num + rhs.num - self.sc.priorden).ravel()
+        llr = self.num + rhs.num - self.sc.priorden
         for i in range(self.m):
             llr -= self.postden(rhs,i)
         return llr    

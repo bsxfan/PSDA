@@ -243,7 +243,7 @@ class LogBesselI:
             k = np.array([k])
             if logk is not None:
                  logk = np.array([logk])
-            return self.__call__(k,logk,exp_scale)[0]
+            return self.__call__(k,logk,exp_scale).item()
         elif k.ndim>1:
             sh = k.shape
             if logk is not None: logk = logk.ravel()
