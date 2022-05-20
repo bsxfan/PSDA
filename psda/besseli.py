@@ -133,6 +133,7 @@ class LogBesselI:
         self.exponent = (2*m+nu).reshape(-1,1)
         self.den = (logfactorial(m) + gammaln(m+1+nu)).reshape(-1,1)
         self.at0 = 0.0 if nu==0 else -np.inf
+        self.Cvmf_at0 = nu*log2 + gammaln(nu+1)
         
         
 
@@ -256,7 +257,7 @@ class LogBesselI:
         y = ive(self.nu,k) 
         
         # apply logs when k=0, or y > 0 and not NaN
-        ok = np.logical_or(k==0, y > 0) # ive gives correct answer (0 or 1) for x==0
+        ok = np.logical_or(k==0, y > 0) # ive gives correct answer (0 or 1) for k==0
         with np.errstate(divide='ignore'): # y may be 0 if x ==0
             y[ok] = np.log(y[ok])       
         if not exp_scale: y[ok] += k[ok]  # undo scaling done by ive
@@ -291,7 +292,7 @@ class LogBesselI:
             
             k and/ or logk: scalars or vectors
                
-               Both k and lox are used.
+               Both k and logk are used.
                   
                   
         returns: scalar or vector log I(nu,k)          
@@ -307,7 +308,7 @@ class LogBesselI:
             
             log [I(nu, k) exp(-k)] = log I(nu,k) - k. 
             
-        This inokes __call__ with exp_scaling=True. See __call__ for more 
+        This invokes __call__ with exp_scaling=True. See __call__ for more 
         details.
         
         inputs:
@@ -359,8 +360,11 @@ class LogBesselI:
         """
         nu = self.nu
         k, logk = k_and_logk(k, logk)
-        if np.isscalar(k) and k == 0:
-            return nu*log2 + gammaln(nu+1)  # irrespective of exp_scaling
+        if np.isscalar(k):
+            if k==0: return self.Cvmf_at0  # irrespective of exp_scaling
+        elif k.size==1:
+            ki = k.item()
+            if ki == 0: return self.Cvmf_at0
         logI = self(k, logk, exp_scale)
         y = nu*logk - logI
         return y
@@ -369,12 +373,12 @@ class LogBesselI:
 
     def logCvmf_e(self, k=None, logk=None):
         """
-        log normalization constant (numerator) for Von Mises-Fisher 
-        distribution, with nu = dim/2-1
+        Exponentially scaled log normalization constant (numerator) for 
+        Von Mises-Fisher distribution, with nu = dim/2-1
         
         
             log Cvmf_e(k) = log [ k^nu / (I_nu(k) exp(-k)) ]
-                              = nu*log(k) + k - log I_nu(k)            
+                          = nu*log(k) + k - log I_nu(k)            
             
             VMF(x | mu, k) \propto Cvmf_e(k) exp[k*(mu'x-1)]
             

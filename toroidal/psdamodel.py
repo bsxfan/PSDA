@@ -661,10 +661,11 @@ class ToroidalPSDA:
         
     
 class Scoring:
-    def __init__(self, model: ToroidalPSDA, fast = False):
+    def __init__(self, model: ToroidalPSDA, fast = False, shortcut = False):
         kappa = model.kappa
         self.m = m = model.m
         self.fast = fast
+        self.shortcut = shortcut
         assert m >= 1
         self.zprior = zprior = model.zprior
         self.uniform = uniform  = zprior.uniform
@@ -684,9 +685,11 @@ class Scoring:
         input: ksq: k**2   (m, t)
         output: (t,)
         """
+        if self.shortcut: return self.sumlogC_shortcut(ksq)
         m, fast = self.m, self.fast
         vmf = self.zprior.vmf
-        logk = np.log(ksq)/2
+        with np.errstate(divide='ignore'):
+            logk = np.log(ksq)/2
         if m==1: return vmf[0].logC(logk=logk.squeeze(), fast=fast)
         logk = logk.reshape(m,-1)
         s = vmf[0].logC(logk=logk[0,:], fast=fast)
@@ -694,8 +697,20 @@ class Scoring:
             s += vmf[i].logC(logk=logk[i,:], fast=fast)
         return s    
 
+    def sumlogC_shortcut(self, ksq):
+        """
+        input: ksq: k**2   (m, t)
+        output: (t,)
+        """
+        m = self.m
+        k = np.sqrt(ksq)
+        if m==1: return -k.squeeze()
+        k = k.reshape(m,-1)
+        return -k.sum(axis=0)
 
-    def logC(self, logk, i):
+    def logC(self, ksq, i):
+        if self.shortcut: return -np.sqrt(ksq)
+        logk = np.log(ksq) / 2
         return self.zprior.vmf[i].logC(logk=logk, fast=self.fast)
 
 
@@ -735,15 +750,13 @@ class Side:
         left = self.normsq[i,:].reshape(-1,1)
         right = rhs.normsq0[i,:]
         ksq = 2*(self.XP[i] @ rhs.XP[i].T) + left + right
-        logk = np.log(ksq) / 2
-        return self.sc.logC(logk,i)
+        return self.sc.logC(ksq,i)
 
     def postden(self,rhs,i):
         left = self.normsq[i,:]
         right = rhs.normsq0[i,:]
         ksq = (self.XP[i] * rhs.XP[i]).sum(axis=-1)*2 + left + right
-        logk = np.log(ksq) / 2
-        return self.sc.logC(logk,i)
+        return self.sc.logC(ksq,i)
 
 
 
