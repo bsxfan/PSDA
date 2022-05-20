@@ -400,6 +400,7 @@ class ToroidalPSDA:
                 assert ns is None
         else:
             assert self.m > 0
+            labels = t_or_labels
             t = len(labels)
         if labels is not None:
             ns = labels.max()+1
@@ -491,14 +492,14 @@ class ToroidalPSDA:
         assert hasspeakers or haschannels
         assert hasspeakers or Xsum is None
         
+        if hasspeakers and Xsum is None:
+                assert labels is not None
+                Xsum = sumX(X, labels)
         ns = None if Xsum is None else Xsum.shape[0]
         t = X.shape[0]
         obj = self.margloglh_term(t,ns)
         
         if hasspeakers:
-            if Xsum is None:
-                assert labels is not None
-                Xsum = sumX(X, labels)
             zPost = self.inferZ(Xsum)
             obj -= zPost.margloglh_term()
             
