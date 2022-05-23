@@ -74,7 +74,7 @@ D = 256
 m = 3
 d = np.array([20,20,20,50])
 w = np.array([2,4,8,16])
-model0 = umodel(D,d,m,w,kappa=200)    
+model0 = umodel(D,d,m,w,kappa=400)    
 E, elabels, T, tlabels = sample_te(model0,100,1,10)    
 eer, cllr, mincllr = test(model0, E, elabels, T, tlabels)
 marg = marg_llh(model0,T,tlabels)
