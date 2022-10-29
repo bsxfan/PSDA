@@ -3,7 +3,7 @@
 
 **Update**: We have a new, more powerful generalization, **T-PSDA**. The new code repo is [here](https://github.com/bsxfan/Toroidal-PSDA), and a paper describing the new model is available [here](https://arxiv.org/abs/2210.15441).
 
-This is a Python implementation of the algorithms described in our (submitted) Interspeech 2022 paper:
+This is a Python implementation of the algorithms described in our Interspeech 2022 paper:
 > [Probabilistic Spherical Discriminant Analysis: An Alternative to PLDA for length-normalized embeddings](https://arxiv.org/abs/2203.14893)
 
 - Please cite this paper if you find our code useful.
